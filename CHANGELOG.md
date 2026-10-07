@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.2 - 2026-10-07
+- **Fix: online fight started for one player only.** A PC sent "loaded" only while it was still waiting, so the PC that
+  finished loading first waited forever. Now each PC always announces it is ready (verified against a test peer that
+  loads first).
+- **Fix: could not leave a server** (#1). Network status events re-opened the lobby over the server list after
+  Disconnect / Backspace.
+- **Fix: new room after a fight opened the move loadout** with no character (#2). The select screen now always opens
+  on the team grid.
+
 ## 0.1.1 - 2026-10-07
 - **Fix: monsters froze on a gamepad Attack** (walked up to the target and stood there). The controller's Attack skips
   the call the mod listened for; any unclassified action now plays the unit's basic move.

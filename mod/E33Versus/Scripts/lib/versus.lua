@@ -626,11 +626,14 @@ function V.readyCheck()
   pcall(V.clearFade)
   -- arena: travel to the chosen location first (same level for both online players), then continue here
   if V.fightWhenReady and V.travelIfNeeded() then return end
-  if V.fightWhenReady and V.online and not V.online.peerLoaded then
-    -- online: wait in the world until the opponent has loaded too (both start the fight together)
-    if not V.online.sentLoaded then V.online.sentLoaded = true; NET.msg("loaded", {}); log("online: loaded, waiting for the opponent") end
-    V.worldSeen = os.clock() - 3   -- re-check next frame without re-waiting 3 s
-    return
+  if V.fightWhenReady and V.online then
+    -- online: both start the fight together. ALWAYS tell the opponent we are here, even if their "loaded" came first:
+    -- sending it only while still waiting left the faster PC waiting forever (the slower one fought alone).
+    if not V.online.sentLoaded then V.online.sentLoaded = true; NET.msg("loaded", {}); log("online: loaded" .. (V.online.peerLoaded and "" or ", waiting for the opponent")) end
+    if not V.online.peerLoaded then
+      V.worldSeen = os.clock() - 3   -- re-check next frame without re-waiting 3 s
+      return
+    end
   end
   if V.fightWhenReady then
     V.fightWhenReady = nil

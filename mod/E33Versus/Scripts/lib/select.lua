@@ -451,6 +451,9 @@ function SEL.slotToFill() for i = 1, 3 do if not V.cfg[SEL.side][i] then return 
 -- mode "world": opened in a loaded world (F6 / L3+R3).
 function SEL.open(mode)
   SEL.mode = mode or "world"
+  -- sub-modes left open when the previous screen closed (e.g. a match started while editing a loadout) refer to
+  -- slots that no longer exist: always start on the team grid
+  SEL.lo, SEL.arenaMode, SEL.msg = nil, false, nil
   if SEL.mode == "title" then SEL.hideTitle(true) end
   E33V_TITLE_PAD = SEL.mode == "title"
   UI.close()

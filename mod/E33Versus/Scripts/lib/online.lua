@@ -30,6 +30,7 @@ function ONLINE.isHost() return NET.status.role ~= "guest" end
 
 -- ---------- menus ----------
 function ONLINE.modeMenu()
+  ONLINE.where = nil
   SCR.show({
     title = "Versus", subtitle = "Choose how to play",
     items = {
@@ -42,6 +43,7 @@ function ONLINE.modeMenu()
 end
 
 function ONLINE.serverList()
+  ONLINE.where = nil
   local servers = NET.loadServers()
   local items = {}
   for i, s in ipairs(servers) do
@@ -95,6 +97,13 @@ function ONLINE.connect(server)
   NET.connect(server)
   ONLINE.lobby()
 end
+function ONLINE.disconnect()
+  ONLINE.where = nil
+  NET.send({ t = "disconnect" })
+  NET.status.room, NET.status.role, NET.status.peer = nil, nil, nil
+  ONLINE.askedRooms = nil
+  ONLINE.serverList()
+end
 function ONLINE.statusLines()
   local s = NET.status
   local lines = { ONLINE.server and ONLINE.server.name or "Server" }
@@ -111,6 +120,7 @@ end
 function ONLINE.lobby()
   local s = NET.status
   if s.room then return ONLINE.roomScreen() end
+  ONLINE.where = "lobby"
   local online = s.state == "online"
   local items = {
     { label = "Create room", sub = "Get a code to give your opponent", disabled = not online, on = function() NET.send({ t = "create" }) end },
@@ -124,12 +134,13 @@ function ONLINE.lobby()
   if s.state == "offline" then
     items[#items + 1] = { label = "Reconnect", sub = s.error and tostring(s.error) or nil, on = function() ONLINE.connect(ONLINE.server) end }
   end
-  items[#items + 1] = { label = "Disconnect", on = function() NET.send({ t = "disconnect" }); ONLINE.serverList() end }
+  items[#items + 1] = { label = "Disconnect", on = function() ONLINE.disconnect() end }
   SCR.show({ title = "Online", subtitle = "Lobby", items = items, info = ONLINE.statusLines(),
-    back = function() NET.send({ t = "disconnect" }); ONLINE.serverList() end })
+    back = function() ONLINE.disconnect() end })
   if online and not ONLINE.askedRooms then ONLINE.askedRooms = true; NET.send({ t = "rooms" }) end
 end
 function ONLINE.roomScreen()
+  ONLINE.where = "room"
   SCR.show({ title = "Online", subtitle = "Room " .. tostring(NET.status.room) .. "  -  give this code to your opponent",
     items = { { label = "Leave room", on = function() NET.send({ t = "leave" }); NET.status.room = nil; ONLINE.lobby() end } },
     info = ONLINE.statusLines(), back = function() NET.send({ t = "leave" }); NET.status.room = nil; ONLINE.lobby() end })
@@ -137,6 +148,7 @@ end
 
 -- ---------- online character select ----------
 function ONLINE.enterSelect()
+  ONLINE.where = nil
   SCR.close()
   V.cfg.A, V.cfg.B, V.cfg.level = {}, {}, nil
   SEL.online = { me = ONLINE.mySide(), ready = { A = false, B = false } }
@@ -176,9 +188,9 @@ function ONLINE.go(g)
   SEL.online = nil
   SEL.close()
   if V.inWorld() then
-    -- already in a world (rematch): no save to load, start right away once both sides are here
+    -- already in a world (rematch): no save to load. V.readyCheck sends "loaded" once this PC is really ready
+    -- (a rematch first reloads the level: announcing it here let the opponent start while we were still loading).
     V.fightWhenReady, V.worldSeen = os.clock(), os.clock() - 3
-    NET.msg("loaded", {}); V.online.sentLoaded = true
   else
     V.startFromTitle()
   end
@@ -186,8 +198,9 @@ end
 
 -- ---------- network events ----------
 function ONLINE.installHandlers()
-  NET.on("net", function() if SCR.active then if NET.status.room then ONLINE.roomScreen() else ONLINE.lobby() end end end)
-  NET.on("rooms", function(m) ONLINE.rooms = m.rooms or {}; if SCR.active and not NET.status.room then ONLINE.lobby() end end)
+  -- redraw only while the lobby / room screen is showing (after Disconnect these events re-opened the lobby: issue #1)
+  NET.on("net", function() if SCR.active and ONLINE.where then if NET.status.room then ONLINE.roomScreen() else ONLINE.lobby() end end end)
+  NET.on("rooms", function(m) ONLINE.rooms = m.rooms or {}; if SCR.active and ONLINE.where == "lobby" and not NET.status.room then ONLINE.lobby() end end)
   NET.on("error", function(m) SCR.msg = tostring(m.why); if SEL.active then SEL.msg = tostring(m.why); SEL.build() else SCR.refresh() end end)
   NET.on("joined", function(m)
     if m.peer then ONLINE.enterSelect() else ONLINE.roomScreen() end
