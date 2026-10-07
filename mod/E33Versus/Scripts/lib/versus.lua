@@ -383,6 +383,7 @@ function V.setup()
   for _, ph in ipairs(phEnemies) do if ph then pcall(U.kick, ph) end end
   log(("setup done: players=%d enemies=%d, strays removed: %d"):format(#bm.PlayerCharacters, #bm.Enemies, V.cleanupStrays()))
   if MU then pcall(MU.start) end
+  if SYNC and SYNC.active() then pcall(SYNC.sendStats); pcall(SYNC.applyStats) end   -- same stats on both PCs
   local okH, errH = pcall(V.rebuildHUD); if not okH then log("HUD rebuild: " .. tostring(errH)) end
   bm.FleeImpossible = true   -- no "Fuir" in versus
 end

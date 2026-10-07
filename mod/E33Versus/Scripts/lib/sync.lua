@@ -83,9 +83,16 @@ function SYNC.wrap()
         -- this PC before the same hits land here (defense.lua)
         SYNC.sendAct(u, "move", { move = move.prop, target = SYNC.uid(target) })
         DEF.begin(u)
-        local d = SYNC.delay()
-        slog(("my move starts in %.2f s"):format(d))
-        SYNC.after(d, function() exec(u, move, target) end)
+        -- start when the defender's PC reports the attack really began there (+ margin), so the outcome of every
+        -- hit arrives before the same hit lands here; fallback if that message never comes
+        local a = DEF.act
+        a.start = function(why)
+          if a.started or DEF.act ~= a then return end
+          a.started = true
+          slog("my move starts (" .. why .. ")")
+          exec(u, move, target)
+        end
+        SYNC.after(SYNC.BEGAN_TIMEOUT, function() a.start("no 'began' from the opponent") end)
         return
       end
       return exec(u, move, target)
@@ -188,11 +195,57 @@ function SYNC.install()
   NET.on("msg:state", SYNC.onState)
   NET.on("msg:turn", SYNC.onTurnMsg)
   NET.on("msg:hit", DEF.onHit)
+  NET.on("msg:began", DEF.onBegan)
+  NET.on("msg:stats", SYNC.onStats)
+end
+
+-- ---------- unit stats: each PC is the truth for its own side ----------
+-- Heroes come from each player's own save and monsters are scaled against that save's heroes, so the same unit had
+-- different HP / attack / speed on the two PCs (server log 2026-10-07: Duolliste ATK 1639 vs 4790). After setup,
+-- each PC sends the full stat sheet of its own units; the other PC applies it.
+function SYNC.statSheet(u)
+  local st = u.AC_jRPG_CharacterStats
+  local stats = {}
+  st.CharacterCurrentStats:ForEach(function(k, v) stats[tostring(k:get())] = v:get() end)
+  return { stats = stats, hp = st.CurrentHP }
+end
+function SYNC.sendStats()
+  local units = {}
+  for _, u in ipairs(V.units or {}) do
+    local id = SYNC.uid(u)
+    if id and u:IsValid() and id:sub(1, 1) == V.online.me then units[id] = SYNC.statSheet(u) end
+  end
+  NET.msg("stats", { units = units })
+  slog("stats sent for my units")
+end
+function SYNC.onStats(m)
+  SYNC.pendingStats = m.units
+  pcall(SYNC.applyStats)
+end
+function SYNC.applyStats()
+  local pend = SYNC.pendingStats
+  if not (pend and V.units and #V.units > 0 and V.uidOf) then return end   -- applied once our setup is done
+  SYNC.pendingStats = nil
+  local done = {}
+  for id, s in pairs(pend) do
+    local u = SYNC.unit(id)
+    if u then
+      for k, v in pairs(s.stats or {}) do
+        local key = tonumber(k)
+        if key == 1 then V.setMaxHP(u, v) else V.setStat(u, key, v) end
+      end
+      if s.hp then u.AC_jRPG_CharacterStats.CurrentHP = s.hp end
+      done[#done + 1] = ("%s hp %.0f atk %s spd %s"):format(id, s.hp or -1, tostring(s.stats and s.stats["3"]), tostring(s.stats and s.stats["8"]))
+    end
+  end
+  slog("stats applied: " .. table.concat(done, ", "))
 end
 
 -- ---------- timing ----------
 -- Head start the defender's PC gets on my monster attacks: the outcome of each hit must travel back before the same
 -- hit lands here. Round trip (sidecar ping) + the run-to-run variation of attack timing (~0.35 s measured).
+SYNC.BEGAN_TIMEOUT = 2.5   -- seconds to wait for the defender's "began" before starting anyway
+SYNC.BEGAN_MARGIN = 0.25   -- after "began": the defender is this far ahead (+ network) when we start
 function SYNC.delay()
   local rtt = (tonumber(NET.status.ping_ms) or 100) / 1000
   return math.min(1.2, 0.45 + 1.5 * rtt)
@@ -226,7 +279,11 @@ function SYNC.unblockInput()
 end
 -- Hook callbacks only delegate to these named functions: a registered closure keeps the code it was created with,
 -- so inline logic would survive hot reloads unchanged.
-function SYNC.cbAcquire(ctx) if SYNC.active() and SYNC.mine(ctx:get()) then SYNC.blockInput() end end
+function SYNC.cbAcquire(ctx)
+  if not SYNC.active() then return end
+  if SYNC.mine(ctx:get()) then SYNC.blockInput() end
+  if DEF and DEF.onAcquire then pcall(DEF.onAcquire, ctx) end
+end
 function SYNC.hookActionStart()
   if E33V_SYNC_ACTHOOK then return end
   local base = "/Game/jRPGTemplate/Blueprints/Basics/BP_jRPG_Character_Battle_Base.BP_jRPG_Character_Battle_Base_C:"

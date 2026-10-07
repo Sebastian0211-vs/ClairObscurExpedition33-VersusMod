@@ -17,6 +17,22 @@ function DEF.begin(u)
 end
 function DEF.stop() DEF.act = nil end
 
+-- Defender's PC: the opponent's attacking unit acquires its targets = the attack really started here.
+function DEF.onAcquire(ctx)
+  local a = DEF.act
+  if not (a and not a.mine and not a.beganSent) then return end
+  local u = ctx:get()
+  if not (u and SYNC.uid(u) == a.actor) then return end
+  a.beganSent = true
+  NET.msg("began", { actor = a.actor })
+end
+-- Attacker's PC: the defender's attack started -> start ours a moment later.
+function DEF.onBegan(m)
+  local a = DEF.act
+  if not (a and a.mine and a.start and m.actor == a.actor) then return end
+  SYNC.after(SYNC.BEGAN_MARGIN, function() a.start("opponent began") end)
+end
+
 -- Which defense a unit is in right now (flags read at the hit).
 function DEF.kindOf(t)
   if t.IsGradientParrying then return "gparry" end

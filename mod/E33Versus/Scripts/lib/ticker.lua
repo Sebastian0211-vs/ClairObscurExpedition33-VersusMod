@@ -37,6 +37,7 @@ function TICK.frame()
   if V and V.frameCheck then pcall(V.frameCheck) end           -- end of match (also during cinematic attacks)
   if WH and WH.frame then pcall(WH.frame) end                   -- monster wheel: skill page, targeting labels, camera
   if SYNC and SYNC.tick then pcall(SYNC.tick) end               -- online: delayed own moves, replayed defenses
+  if MU and MU.frame then pcall(MU.frame) end                   -- fight music: restart the track when it ends
   if GP and GP.pollTitle then pcall(GP.pollTitle) end           -- title menus: gamepad + text fields
   if TB and TB.poll then pcall(TB.poll) end                     -- title VERSUS button timing
   if now - (TICK.devAt or 0) >= 1 then TICK.devAt = now; pcall(TICK.dev) end

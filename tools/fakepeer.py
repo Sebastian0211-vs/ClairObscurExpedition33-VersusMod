@@ -67,8 +67,11 @@ def main():
                 msg("ready", side="B", ready=True)
             elif k == "go":
                 time.sleep(1); msg("loaded")
+                # our units' stat sheet (each PC is the truth for its own units); easy-to-spot values
+                time.sleep(25); msg("stats", units={"B1": {"stats": {"1": 5000, "3": 999, "8": 777}, "hp": 4321}})
             elif k == "act" and m.get("kind") == "move" and a.parry and str(m.get("target", "")).startswith("B"):
-                # we "defend": the real defender PC sends one outcome per hit right after each hit
+                # we "defend": the attack starts here (began), then one outcome per hit right after each hit
+                time.sleep(0.5); msg("began", actor=m["uid"])
                 for n in range(1, 13):
                     send({"t": "msg", "k": "hit", "uid": m["target"], "n": n, "def": "parry", "actor": m["uid"]})
             elif k == "act" and m.get("kind") == "hero":
