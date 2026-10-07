@@ -68,7 +68,7 @@ def main():
             elif k == "go":
                 time.sleep(1); msg("loaded")
                 # our units' stat sheet (each PC is the truth for its own units); easy-to-spot values
-                time.sleep(25); msg("stats", units={"B1": {"stats": {"1": 5000, "3": 999, "8": 777}, "hp": 4321}})
+                time.sleep(15); msg("stats", units={"B1": {"stats": {"1": 5000, "3": 30, "8": 100}, "hp": 5000}})
             elif k == "act" and m.get("kind") == "move" and a.parry and str(m.get("target", "")).startswith("B"):
                 # we "defend": the attack starts here (began), then one outcome per hit right after each hit
                 time.sleep(0.5); msg("began", actor=m["uid"])
