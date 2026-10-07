@@ -201,7 +201,7 @@ function SEL.build()
   local function teamPanel(side, x)
     local active = SEL.side == side
     local head = new(tree, "/Script/UMG.HorizontalBox")
-    local label = side == "A" and "Team 1" or "Team 2"
+    local label = side == "A" and "Team 1" or (V.cfg.ai and "AI" or "Team 2")
     if SEL.online then
       label = (side == SEL.online.me) and "You" or (SEL.cut(NET.status.peer or "Opponent", 12))
       if SEL.online.ready[side] then label = label .. "  -  Ready" end
@@ -601,6 +601,7 @@ function SEL.key(k)
   elseif k == "F7" then SEL.arenaMode = true; WH.sfx("open")
   elseif k == "F8" then WH.sfx("tab"); V.cfg.level = V.cfg.level and (V.cfg.level < 95 and V.cfg.level + 5 or nil) or 20   -- ... 95 -> auto -> 20
   elseif k == "SPACE" then
+    if V.cfg.ai and not V.cfg.B[1] and AI then V.cfg.B = AI.randomTeam() end   -- empty AI team: a random one
     if not (V.cfg.A[1] and V.cfg.B[1]) then SEL.msg = "Each team needs at least one unit"; WH.sfx("deny")
     elseif SEL.mode == "title" then WH.sfx("start"); SEL.close(); V.startFromTitle(); return
     else

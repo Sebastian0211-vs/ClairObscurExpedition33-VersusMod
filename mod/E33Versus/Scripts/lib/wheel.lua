@@ -254,6 +254,7 @@ function WH.frame()
   c.frames = (c.frames or 0) + 1
   local okS, ts = pcall(function() return c.u:GetCurrentBattleTurnState() end)
   if okS then
+    if ts ~= c.turnState then log(("turn state %s -> %s (frame %d)"):format(tostring(c.turnState), tostring(ts), c.frames)) end
     if ts == 2 and c.turnState ~= 2 then c.loadAt = c.frames + 2 end
     c.turnState = ts
   end
@@ -344,6 +345,7 @@ function WH.loadSkillPage()
   local sw = o.SkillWheel
   -- loading the list for a unit labelled player-team crashed the game (it reads that character's save data, which a
   -- monster does not have): label it enemy for the call only.
+  log("skill page load: wheel widget " .. tostring(sw and sw:IsValid()))
   if sw and sw:IsValid() then
     local was = c.u["Enemy?"]; c.u["Enemy?"] = true
     -- The Skills parameter is by-ref: UE4SS 3.0.1 rewrites the handles in the Lua table we pass into references to the

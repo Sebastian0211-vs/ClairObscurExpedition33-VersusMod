@@ -490,6 +490,7 @@ function V.checkSides(forceEnd, dyingAddr)
   end
   V.ended = true
   if MU then pcall(MU.stop, 2.0) end
+  if AI then pcall(AI.unblock) end
   if V.online and ONLINE then pcall(ONLINE.uploadLog, "match-end") end   -- server owner gets both players' logs
   -- Final labels from THIS screen's point of view, LIVING units only: the game's CheckBattleEnd says DEFEAT when
   -- PlayerCharacters is empty and VICTORY when Enemies is empty. My side = the "heroes" (local: team 1; online: own side).
@@ -743,6 +744,11 @@ function V.onTurnStart(ctx)
       local ok, err = pcall(WH.beginTurn, c); if not ok then log("WHEEL ERROR " .. tostring(err)) end
     end
     return
+  end
+  if AI then
+    local okA, mine = pcall(AI.onTurn, c)
+    if not okA then log("AI turn error " .. tostring(mine)) end
+    if okA and mine then return end
   end
   if E33V_CONTROLLED[addr] then
     E.onTurn(c)

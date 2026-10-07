@@ -34,7 +34,8 @@ function ONLINE.modeMenu()
   SCR.show({
     title = "Versus", subtitle = "Choose how to play",
     items = {
-      { label = "Local versus", sub = "Two players on this PC, one controller each or shared keyboard", on = function() SCR.close(); V.cfg.level = nil; SEL.open("title") end },
+      { label = "Local versus", sub = "Two players on this PC, one controller each or shared keyboard", on = function() SCR.close(); V.cfg.level = nil; V.cfg.ai = false; SEL.open("title") end },
+      { label = "Versus AI", sub = "You against the computer: build both teams, or leave team 2 empty for a random one", on = function() SCR.close(); V.cfg.level = nil; V.cfg.ai = true; SEL.open("title") end },
       { label = "Online versus", sub = "Play against someone through a server", on = function() ONLINE.serverList() end },
       { label = "Back", on = function() SCR.exit() end },
     },
@@ -161,6 +162,7 @@ end
 -- ---------- online character select ----------
 function ONLINE.enterSelect()
   ONLINE.where = nil
+  V.cfg.ai = false
   SCR.close()
   V.cfg.A, V.cfg.B, V.cfg.level = {}, {}, nil
   SEL.online = { me = ONLINE.mySide(), ready = { A = false, B = false } }

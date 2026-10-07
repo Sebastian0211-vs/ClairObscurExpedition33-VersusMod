@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+- **Versus AI**: play alone against the computer (VERSUS -> Versus AI). Build both teams, or leave team 2 empty for a
+  random one within the cap. AI monsters and bosses use their own moves on the AP economy (and the phase-up super
+  move); AI heroes attack with an imperfect number of combo presses.
+- **Fight music**: pick the battle music in the arena picker (Music tab, Q/E or LB/RB): random, the location's music,
+  or one of 88 battle tracks of the game. Online, the host chooses and both players hear the same track.
+- **Server logs** (server owners): the relay records every room's messages and stores players' game logs, uploaded
+  automatically at the end of an online match, when the opponent leaves, on a desync, or with **Send logs** in the
+  online menu. Optional password-protected log page (see server/README.md).
+- Select screen shows controller buttons when a controller is used (#9).
+
 ## 0.2.0 - 2026-10-07
 - **Online: see the opponent's parries, dodges and jumps on monster attacks.** The defending player's PC reports the
   outcome of every hit; the attacker's PC plays its own attack a moment later (about half a second plus ping) and makes
