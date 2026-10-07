@@ -1,4 +1,5 @@
--- E33 Versus v0 (hotseat). Requires unitlib.lua, uilib.lua, picker.lua (functions only) loaded first.
+-- E33 Versus core: teams, match setup and battle flow (local and online).
+-- Requires unitlib.lua, uilib.lua, picker.lua (functions only) loaded first.
 -- F6 opens the versus menu. Teams of up to 3 units each, any hero in the save or any DT_jRPG_Enemies row.
 V = V or {}
 V.LOGF = (E33V_DATA or "") .. (E33V_LOGNAME or "versus.log")

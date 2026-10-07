@@ -1,6 +1,6 @@
 -- E33 Versus online: game side of the network bridge (requires json.lua).
--- The sidecar (net/client/e33net.py) holds the TCP connection to the relay; we talk to it through
--- bridge/net/out.jsonl (we append) and bridge/net/in.jsonl (it appends, we read from our offset).
+-- The sidecar (sidecar/e33net.py, shipped as bin/e33net.exe) holds the TCP connection to the relay; we talk to it
+-- through data/net/out.jsonl (we append) and data/net/in.jsonl (it appends, we read from our offset).
 NET = NET or {}
 NET.DIR = (E33V_DATA or "") .. "net/"
 -- release: bin/e33net.exe (built by CI, no Python needed); dev: the .py through pythonw (E33V_SIDECAR_PY)

@@ -12,3 +12,6 @@ relay/
 __pycache__/
 *.pyc
 server/.env
+# local tooling
+.idea/
+.venv/
