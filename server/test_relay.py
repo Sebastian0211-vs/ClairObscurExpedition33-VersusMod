@@ -26,7 +26,13 @@ class Client:
                 m = json.loads(line)
                 if pred(m):
                     return m
-            self.buf += self.s.recv(65536)
+            try:
+                data = self.s.recv(65536)
+                if not data:  # Connection closed by server
+                    raise SystemExit("FAIL: connection closed by server while waiting for " + what)
+                self.buf += data
+            except ConnectionResetError as e:
+                raise SystemExit("FAIL: connection reset by server while waiting for " + what) from e
         raise SystemExit("FAIL: no " + what)
 
 
