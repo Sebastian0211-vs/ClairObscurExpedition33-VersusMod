@@ -11,6 +11,7 @@ def main():
     ap.add_argument("--key", default=""); ap.add_argument("--room", default="")
     ap.add_argument("--units", default="CZ_ChromaLune")
     ap.add_argument("--item", action="store_true", help="first own turn: use a Healing Tint on itself (item sync test)")
+    ap.add_argument("--parry", action="store_true", help="defender: report every hit of the host's monster moves as parried")
     a = ap.parse_args()
     s = socket.create_connection((a.host, a.port))
     lock = threading.Lock()
@@ -66,6 +67,10 @@ def main():
                 msg("ready", side="B", ready=True)
             elif k == "go":
                 time.sleep(1); msg("loaded")
+            elif k == "act" and m.get("kind") == "move" and a.parry and str(m.get("target", "")).startswith("B"):
+                # we "defend": the real defender PC sends one outcome per hit right after each hit
+                for n in range(1, 13):
+                    send({"t": "msg", "k": "hit", "uid": m["target"], "n": n, "def": "parry", "actor": m["uid"]})
             elif k == "act" and m.get("kind") == "hero":
                 last_hero["atype"] = m.get("atype")      # learn the host's action type numbers
             elif k == "turn" and str(m.get("uid", "")).startswith("B") and m.get("hero"):

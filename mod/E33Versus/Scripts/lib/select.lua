@@ -191,9 +191,11 @@ function SEL.build()
     slot:SetHorizontalAlignment(2); slot:SetVerticalAlignment(2)
     tabs:AddChildToHorizontalBox(ov)
   end
-  place(ctext(tree, "Q", "small", GREY, 14), gx0 - 24, 44)
-  place(tabs, gx0, 32)
-  place(ctext(tree, "E", "small", GREY, 14), gx0 + 150 * #SEL.CAT_SHORT + 8, 44)
+  if not SEL.arenaMode then   -- the arena/music picker draws its own tabs here
+    place(ctext(tree, "Q", "small", GREY, 14), gx0 - 24, 44)
+    place(tabs, gx0, 32)
+    place(ctext(tree, "E", "small", GREY, 14), gx0 + 150 * #SEL.CAT_SHORT + 8, 44)
+  end
 
   -- team columns
   local function teamPanel(side, x)
@@ -256,8 +258,34 @@ function SEL.build()
       place(ctext(tree, m.cost .. " AP", "num", on and GOLD or GREY, 17), x + cw - 70, y + 12)
     end
   end
+  elseif SEL.arenaMode and SEL.atab == "music" then
+  -- music list (Q/E switches between the Arena and Music tabs)
+  SEL.drawPickTabs(tree, place, gx0)
+  local list = MU.list()
+  local cols, rh = 2, 46
+  local cw = math.floor(((gx1 - gx0) - 20) / cols)
+  local perCol = math.max(1, math.floor((H - 330 - 170) / rh))
+  local perPage = cols * perCol
+  SEL.mperCol = perCol
+  SEL.mcur = math.max(1, math.min(SEL.mcur or 1, #list))
+  local first = math.floor((SEL.mcur - 1) / perPage) * perPage
+  for i = first + 1, math.min(#list, first + perPage) do
+    local m = list[i]
+    local k = i - first - 1
+    local x = gx0 + math.floor(k / perCol) * (cw + 20); local y = 170 + (k % perCol) * rh
+    local sel, chosen = i == SEL.mcur, V.cfg.music == m.id
+    place(image(SEL.T.slot, sel and { 1, 0.85, 0.55, 1 } or (chosen and { 1, 1, 1, 0.95 } or { 1, 1, 1, 0.3 })), x, y, cw, rh - 6)
+    place(ctext(tree, (chosen and "> " or "   ") .. SEL.cut(m.name, 40), "body", chosen and GOLD or (sel and WHITE or GREY), 16), x + 16, y + 10)
+  end
+  place(ctext(tree, ("%d / %d"):format(math.floor(first / perPage) + 1, math.max(1, math.ceil(#list / perPage))), "small", GREY, 14), gx1 - 60, 170 + perCol * rh)
+  local dy = H - 300
+  place(image(SEL.T.detail, { 1, 1, 1, 0.97 }), gx0 - 10, dy, (gx1 - gx0) + 20, 230)
+  place(ctext(tree, "Fight music", "h2", GOLD, 26), gx0 + 30, dy + 36)
+  place(ctext(tree, "Chosen: " .. MU.label(V.cfg.music), "body", WHITE, 18), gx0 + 30, dy + 86)
+  place(ctext(tree, SEL.hint("music"), "small", GREY, 15), gx0 + 30, dy + 130)
   elseif SEL.arenaMode then
   -- arena grid: locations with their artwork (F7 toggles)
+  SEL.drawPickTabs(tree, place, gx0)
   local arenas = SEL.arenaList()
   local acols, arows, agap = 4, 3, 14
   local aperPage = acols * arows
@@ -293,7 +321,7 @@ function SEL.build()
     if ca.icon then place(image(ca.icon), gx0 + 30, dy + 20, 350, 189) end
     place(ctext(tree, SEL.arenaName(ca), "h2", GOLD, 26), gx0 + 400, dy + 36)
     place(ctext(tree, ca.id and "Both players travel here for the fight" or "Fight where the loaded save stands", "body", WHITE, 17), gx0 + 400, dy + 86)
-    place(ctext(tree, "Enter choose    Backspace / F7 back", "small", GREY, 15), gx0 + 400, dy + 130)
+    place(ctext(tree, SEL.hint("arena"), "small", GREY, 15), gx0 + 400, dy + 130)
   end
   else
   -- card grid
@@ -356,10 +384,12 @@ function SEL.build()
 
   end
   -- footer
-  local keysHelp = SEL.lo and "Arrows move   Enter add / remove   Space or Backspace done" or SEL.online and "Arrows move   Enter pick   Backspace remove   Space ready" or "Arrows move   Enter pick   Backspace remove   Tab team   Space start   F6 close"
+  local keysHelp = SEL.hint(SEL.lo and "loadout" or (SEL.online and "online" or "grid"))
   local cur = V.cfg.arenaId and V.arenaById(V.cfg.arenaId)
-  local footer = ("Arena: %s  (F7)        Level %s  (F8)        " .. keysHelp)
-    :format(cur and SEL.arenaName(cur) or "save location", V.cfg.level and tostring(V.cfg.level) or "auto")
+  local pad = SEL.usingPad()
+  local footer = ("Arena: %s   Music: %s  (%s)      Level %s  (%s)      " .. keysHelp)
+    :format(cur and SEL.cut(SEL.arenaName(cur), 18) or "save location", SEL.cut(MU.label(V.cfg.music), 22), pad and "LT" or "F7",
+      V.cfg.level and tostring(V.cfg.level) or "auto", pad and "RT" or "F8")
   place(ctext(tree, footer, "small", GREY, 14), gx0, H - 52)
   if SEL.msg then place(ctext(tree, SEL.msg, "body", RED, 18), gx0, H - 340); SEL.msg = nil end
 
@@ -391,7 +421,43 @@ function SEL.arenaName(a)
   arenaNames[a.id] = (ok and t and t ~= "") and t or a.name
   return arenaNames[a.id]
 end
+-- Footer / panel hints for the device the player last used (issue #9: controller players saw keyboard keys only).
+-- Controller buttons come from gamepad.lua GP.MAP: A pick, B back/remove, Y team, X start/ready, LB/RB tabs,
+-- LT arena+music, RT level, R3 moves, L3+R3 open/close.
+function SEL.usingPad() return GP and GP.lastUsed ~= nil and GP.lastUsed >= ((KB and KB.lastUsed) or -1) end
+SEL.HINTS = {
+  grid = { "Arrows move   Enter pick   Backspace remove   Tab team   Space start   F6 close",
+           "D-pad move   A pick   B remove   Y team   X start   LB/RB category   R3 moves   L3+R3 close" },
+  online = { "Arrows move   Enter pick   Backspace remove   Space ready",
+             "D-pad move   A pick   B remove   X ready   LB/RB category   R3 moves" },
+  loadout = { "Arrows move   Enter add / remove   Space or Backspace done",
+              "D-pad move   A add / remove   X or B done" },
+  arena = { "Enter choose   Q/E music tab   Backspace / F7 back", "A choose   LB/RB music tab   B / LT back" },
+  music = { "Enter choose   Q/E arena tab   Backspace / F7 back", "A choose   LB/RB arena tab   B / LT back" },
+}
+function SEL.hint(mode) local h = SEL.HINTS[mode] or SEL.HINTS.grid; return SEL.usingPad() and h[2] or h[1] end
+-- Arena / Music picker tabs (Q/E = LB/RB switch).
+function SEL.drawPickTabs(tree, place, x)
+  local music = SEL.atab == "music"
+  place(SEL._ctext(tree, "Arena", "h2", music and GREY or GOLD, 26), x, 36)
+  place(SEL._ctext(tree, "Music", "h2", music and GOLD or GREY, 26), x + 140, 36)
+  place(SEL._ctext(tree, SEL.usingPad() and "LB / RB" or "Q / E", "small", GREY, 14), x + 280, 46)
+end
+function SEL.musicKey(k)
+  local list = MU.list(); local n = #list; local pc = SEL.mperCol or 8
+  if k == "UP" or k == "DOWN" then SEL.mcur = ((SEL.mcur or 1) - 1 + (k == "UP" and -1 or 1)) % n + 1
+  elseif k == "LEFT" or k == "RIGHT" then SEL.mcur = math.max(1, math.min(n, (SEL.mcur or 1) + (k == "LEFT" and -pc or pc)))
+  elseif k == "ENTER" then
+    V.cfg.music = list[SEL.mcur or 1].id
+    SEL.arenaMode = false
+    if SEL.online then ONLINE.sendSettings() end
+  elseif k == "BACK" or k == "F7" then SEL.arenaMode = false
+  end
+  SEL.build()
+end
 function SEL.arenaKey(k)
+  if k == "Q" or k == "E" then SEL.atab = SEL.atab == "music" and "arena" or "music"; WH.sfx("tab"); SEL.build(); return end
+  if SEL.atab == "music" then return SEL.musicKey(k) end
   local acols, aperPage = 4, 12
   if k == "LEFT" or k == "RIGHT" then
     local n = SEL.acur + (k == "LEFT" and -1 or 1)
@@ -486,7 +552,7 @@ function SEL.key(k)
   if on then
     SEL.side = on.me
     if k == "TAB" then return end
-    if (k == "F7" or k == "F8") and not ONLINE.isHost() then SEL.msg = "The host chooses arena and level"; SEL.build(); return end
+    if (k == "F7" or k == "F8") and not ONLINE.isHost() then SEL.msg = "The host chooses arena, music and level"; SEL.build(); return end
     if k == "SPACE" then ONLINE.toggleReady(); if SEL.active then SEL.build() end; return end   -- Ready may start the match (closes this screen)
     if k == "BACK" and not V.cfg[on.me][1] then NET.send({ t = "leave" }); NET.status.room = nil; SEL.online = nil; SEL.close(); ONLINE.lobby(); return end
     if k == "F6" then return end

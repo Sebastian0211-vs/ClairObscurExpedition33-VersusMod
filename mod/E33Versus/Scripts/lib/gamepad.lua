@@ -21,7 +21,7 @@ function GP.poll(pc)
   local menuOpen = (SEL and SEL.active) or UI.lines ~= nil
   if not menuOpen then return end
   for name, action in pairs(GP.MAP) do
-    if pc:WasInputKeyJustPressed(key(name)) then V.key(action) end
+    if pc:WasInputKeyJustPressed(key(name)) then GP.lastUsed = os.clock(); V.key(action) end
   end
 end
 -- Keep the explorer still while the select screen is open (counters are paired).
@@ -43,7 +43,7 @@ function GP.pollTitle()
   if TYPE and TYPE.poll then pcall(TYPE.poll, pc) end
   for name, action in pairs(GP.MAP) do
     local d = pc:IsInputKeyDown(key(name))
-    if d and not GP.down[name] then V.key(action) end
+    if d and not GP.down[name] then GP.lastUsed = os.clock(); V.key(action) end
     GP.down[name] = d
   end
 end

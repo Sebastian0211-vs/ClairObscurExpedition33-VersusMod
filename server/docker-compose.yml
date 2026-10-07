@@ -8,11 +8,19 @@ services:
     restart: unless-stopped
     ports:
       - "${E33_PUBLIC_PORT:-33033}:33033/tcp"
+      - "${E33_LOG_PORT:-33034}:33034/tcp"     # log page (only answers when E33_ADMIN_KEY is set)
     environment:
       E33_KEY: ${E33_KEY:-}
       E33_MOTD: ${E33_MOTD:-E33 Versus relay}
+      E33_ADMIN_KEY: ${E33_ADMIN_KEY:-}
+      E33_LOG_DAYS: ${E33_LOG_DAYS:-30}
+    volumes:
+      - e33logs:/data                            # room logs, players' uploaded logs, relay.log
     logging:
       driver: json-file
       options:
         max-size: "5m"
         max-file: "3"
+
+volumes:
+  e33logs:

@@ -104,6 +104,14 @@ function ONLINE.disconnect()
   ONLINE.askedRooms = nil
   ONLINE.serverList()
 end
+-- Send this PC's game log to the server (the relay stores it for the server owner). reason: match-end, peer-left,
+-- desync, manual. The sidecar reads the file itself (last 1 MB) and sends it in parts.
+function ONLINE.uploadLog(reason)
+  if NET.status.state ~= "online" then return false end
+  NET.send({ t = "upload_log", path = V.LOGF, reason = reason or "manual" })
+  V.log("NET log upload requested (" .. tostring(reason) .. ")")
+  return true
+end
 function ONLINE.statusLines()
   local s = NET.status
   local lines = { ONLINE.server and ONLINE.server.name or "Server" }
@@ -134,6 +142,8 @@ function ONLINE.lobby()
   if s.state == "offline" then
     items[#items + 1] = { label = "Reconnect", sub = s.error and tostring(s.error) or nil, on = function() ONLINE.connect(ONLINE.server) end }
   end
+  items[#items + 1] = { label = "Send logs", sub = "Upload your game log to this server (bug reports)", disabled = not online,
+    on = function() SCR.msg = ONLINE.uploadLog("manual") and "Sending logs..." or "Not connected"; SCR.refresh() end }
   items[#items + 1] = { label = "Disconnect", on = function() ONLINE.disconnect() end }
   SCR.show({ title = "Online", subtitle = "Lobby", items = items, info = ONLINE.statusLines(),
     back = function() ONLINE.disconnect() end })
@@ -142,7 +152,9 @@ end
 function ONLINE.roomScreen()
   ONLINE.where = "room"
   SCR.show({ title = "Online", subtitle = "Room " .. tostring(NET.status.room) .. "  -  give this code to your opponent",
-    items = { { label = "Leave room", on = function() NET.send({ t = "leave" }); NET.status.room = nil; ONLINE.lobby() end } },
+    items = { { label = "Leave room", on = function() NET.send({ t = "leave" }); NET.status.room = nil; ONLINE.lobby() end },
+      { label = "Send logs", sub = "Upload your game log to this server (bug reports)",
+        on = function() SCR.msg = ONLINE.uploadLog("manual") and "Sending logs..." or "Not connected"; SCR.refresh() end } },
     info = ONLINE.statusLines(), back = function() NET.send({ t = "leave" }); NET.status.room = nil; ONLINE.lobby() end })
 end
 
@@ -169,11 +181,12 @@ function ONLINE.toggleReady()
   NET.msg("ready", { side = me, ready = o.ready[me] })
   ONLINE.maybeGo()
 end
-function ONLINE.sendSettings() if ONLINE.isHost() then NET.msg("settings", { arena = V.cfg.arena, arenaId = V.cfg.arenaId, level = V.cfg.level }) end end
+function ONLINE.sendSettings() if ONLINE.isHost() then NET.msg("settings", { arena = V.cfg.arena, arenaId = V.cfg.arenaId, level = V.cfg.level, music = V.cfg.music }) end end
 function ONLINE.maybeGo()
   local o = SEL.online
   if not (o and o.ready.A and o.ready.B and ONLINE.isHost()) then return end
-  local go = { arena = V.cfg.arena, arenaId = V.cfg.arenaId, level = V.cfg.level, seed = os.time(), A = ONLINE.packTeam("A"), B = ONLINE.packTeam("B") }
+  -- music: "Random" is resolved here once so both PCs play the same track
+  local go = { arena = V.cfg.arena, arenaId = V.cfg.arenaId, level = V.cfg.level, music = MU.resolve(V.cfg.music), seed = os.time(), A = ONLINE.packTeam("A"), B = ONLINE.packTeam("B") }
   NET.msg("go", go)
   ONLINE.go(go)
 end
@@ -190,6 +203,7 @@ end
 function ONLINE.go(g)
   V.cfg.A, V.cfg.B = ONLINE.unpackTeam(g.A), ONLINE.unpackTeam(g.B)
   V.cfg.arena, V.cfg.arenaId, V.cfg.level = g.arena or V.cfg.arena, g.arenaId, g.level
+  V.matchMusic = g.music
   V.online = { me = ONLINE.mySide(), seed = g.seed, peerLoaded = false }
   SEL.online = nil
   SEL.close()
@@ -215,7 +229,7 @@ function ONLINE.installHandlers()
   NET.on("peer_left", function()
     if SEL.active and SEL.online then SEL.online = nil; SEL.close() end
     SCR.msg = "Your opponent left"
-    if V.online and V.online.inMatch then V.log("NET opponent left during the match") end
+    if V.online and V.online.inMatch and not V.ended then V.log("NET opponent left during the match"); ONLINE.uploadLog("peer-left") end
     ONLINE.roomScreen()
   end)
   NET.on("msg:team", function(m)
@@ -233,11 +247,16 @@ function ONLINE.installHandlers()
   end)
   NET.on("msg:settings", function(m)
     if ONLINE.isHost() then return end
-    V.cfg.arena, V.cfg.arenaId, V.cfg.level = m.arena or V.cfg.arena, m.arenaId, m.level
+    V.cfg.arena, V.cfg.arenaId, V.cfg.level, V.cfg.music = m.arena or V.cfg.arena, m.arenaId, m.level, m.music
     if SEL.active then SEL.build() end
   end)
   NET.on("msg:go", function(m) if not ONLINE.isHost() then ONLINE.go(m) end end)
   NET.on("msg:loaded", function() if V.online then V.online.peerLoaded = true end end)
+  NET.on("log_ok", function(m)
+    if m.part ~= m.parts then return end
+    V.log("NET log upload done")
+    if SCR.active then SCR.msg = "Logs sent to the server"; SCR.refresh() end
+  end)
   SYNC.install()
 
   NET.onAny = function() if SCR.active and not SCR.typing and (NET.status.state ~= ONLINE.lastState) then ONLINE.lastState = NET.status.state; SCR.refresh() end end

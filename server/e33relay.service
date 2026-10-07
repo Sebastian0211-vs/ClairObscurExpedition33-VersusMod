@@ -5,7 +5,9 @@ Wants=network-online.target
 
 [Service]
 User=e33relay
-ExecStart=/usr/bin/python3 /opt/e33relay/e33relay.py --port 33033 --key CHANGE_ME
+# logs in /var/lib/e33relay (StateDirectory); add --http-port 33034 --admin-key ADMIN_SECRET for the log page
+StateDirectory=e33relay
+ExecStart=/usr/bin/python3 /opt/e33relay/e33relay.py --port 33033 --key CHANGE_ME --log-dir /var/lib/e33relay
 Restart=always
 RestartSec=3
 NoNewPrivileges=true

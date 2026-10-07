@@ -32,8 +32,8 @@ jobs:
 
       - name: Relay integration test (python)
         run: |
-          E33_PORT=33090 E33_KEY=ci python server/e33relay.py &
-          python server/test_relay.py 127.0.0.1 33090 ci
+          E33_PORT=33090 E33_KEY=ci E33_LOG_DIR=/tmp/e33logs E33_HTTP_PORT=33094 E33_ADMIN_KEY=ci-admin python server/e33relay.py &
+          python server/test_relay.py 127.0.0.1 33090 ci 33094 ci-admin
 
   docker:
     runs-on: ubuntu-latest
@@ -43,7 +43,7 @@ jobs:
         run: docker build -t e33versus-relay:ci server
       - name: Container test
         run: |
-          docker run -d --name relay -p 33091:33033 -e E33_KEY=ci e33versus-relay:ci
+          docker run -d --name relay -p 33091:33033 -p 33095:33034 -e E33_KEY=ci -e E33_ADMIN_KEY=ci-admin e33versus-relay:ci
           sleep 2  # Wait for server to be ready
-          python3 server/test_relay.py 127.0.0.1 33091 ci
+          python3 server/test_relay.py 127.0.0.1 33091 ci 33095 ci-admin
           docker logs relay

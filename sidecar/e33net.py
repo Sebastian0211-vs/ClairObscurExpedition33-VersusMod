@@ -4,8 +4,9 @@
 Game <-> sidecar through two append-only JSON-lines files in BRIDGE (--bridge: the mod passes ue4ss/Mods/E33Versus/data/net)
 (UE4SS Lua cannot list directories, so each side remembers how far it has read):
   out.jsonl        appended by the game, one JSON object per line. Local commands:
-                     {"t":"connect","host":"1.2.3.4","port":33033,"name":"Seb","key":""}
+                     {"t":"connect","host":"1.2.3.4","port":33033,"name":"Seb","key":"","mod":"v0.3.0"}
                      {"t":"disconnect"}  {"t":"quit"}
+                     {"t":"upload_log","path":"<game log file>","reason":"match-end"}  (last 1 MB, sent in parts)
                    anything else is sent to the relay as-is ({"t":"create"}, {"t":"msg",...}, ...).
   in.jsonl         appended here for the game: every relay message, plus {"t":"net","state":...} events.
                    The game empties both files before launching the sidecar; the sidecar never truncates them.
@@ -67,7 +68,7 @@ class Net:
         except OSError as e:
             self.drop(f"send failed: {e}")
 
-    def connect(self, host, port, name, key):
+    def connect(self, host, port, name, key, mod="?"):
         self.disconnect(quiet=True)
         self.event("connecting", server=f"{host}:{port}", room=None, role=None, peer=None)
         try:
@@ -78,7 +79,7 @@ class Net:
             self.event("offline", error=f"cannot reach {host}:{port} ({e})"); return
         self.sock = s
         threading.Thread(target=self.reader, args=(s,), daemon=True).start()
-        self.send({"t": "hello", "name": name, "ver": PROTO, "key": key})
+        self.send({"t": "hello", "name": name, "ver": PROTO, "key": key, "mod": mod})
 
     def reader(self, s):
         buf = b""
@@ -152,6 +153,27 @@ class Net:
                 pass
         return out
 
+    # ---- log upload (the relay stores it for the server owner) ----
+    UPLOAD_TAIL = 1024 * 1024    # bytes from the end of the log
+    UPLOAD_PART = 150 * 1024     # characters per message (relay line limit is 256 KB)
+
+    def upload_log(self, path, reason):
+        if not self.sock:
+            self.to_game({"t": "error", "why": "not connected: logs not sent"}); return
+        try:
+            with open(path, "rb") as f:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(max(0, size - self.UPLOAD_TAIL))
+                text = f.read().decode("utf-8", "replace")
+        except OSError as e:
+            self.to_game({"t": "error", "why": f"cannot read log: {e}"}); return
+        parts = [text[i:i + self.UPLOAD_PART] for i in range(0, len(text), self.UPLOAD_PART)] or [""]
+        uid = str(int(time.time() * 1000))
+        for i, chunk in enumerate(parts, 1):
+            self.send({"t": "log", "id": uid, "part": i, "parts": len(parts), "name": os.path.basename(path),
+                       "reason": reason, "text": chunk})
+
     # ---- main loop ----
     GAME_EXE = "SandFall-Win64-Shipping.exe"
 
@@ -175,7 +197,9 @@ class Net:
             for m in self.read_out():
                 t = m.get("t")
                 if t == "connect":
-                    self.connect(m.get("host"), m.get("port", 33033), m.get("name", "player"), m.get("key", ""))
+                    self.connect(m.get("host"), m.get("port", 33033), m.get("name", "player"), m.get("key", ""), m.get("mod", "?"))
+                elif t == "upload_log":
+                    self.upload_log(m.get("path"), m.get("reason", "manual"))
                 elif t == "disconnect":
                     self.disconnect()
                 elif t == "quit":

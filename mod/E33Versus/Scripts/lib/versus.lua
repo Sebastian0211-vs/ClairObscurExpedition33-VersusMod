@@ -382,6 +382,7 @@ function V.setup()
   for _, ph in ipairs(phHeroes) do pcall(U.kick, ph) end
   for _, ph in ipairs(phEnemies) do if ph then pcall(U.kick, ph) end end
   log(("setup done: players=%d enemies=%d, strays removed: %d"):format(#bm.PlayerCharacters, #bm.Enemies, V.cleanupStrays()))
+  if MU then pcall(MU.start) end
   local okH, errH = pcall(V.rebuildHUD); if not okH then log("HUD rebuild: " .. tostring(errH)) end
   bm.FleeImpossible = true   -- no "Fuir" in versus
 end
@@ -488,6 +489,8 @@ function V.checkSides(forceEnd, dyingAddr)
     return true
   end
   V.ended = true
+  if MU then pcall(MU.stop, 2.0) end
+  if V.online and ONLINE then pcall(ONLINE.uploadLog, "match-end") end   -- server owner gets both players' logs
   -- Final labels from THIS screen's point of view, LIVING units only: the game's CheckBattleEnd says DEFEAT when
   -- PlayerCharacters is empty and VICTORY when Enemies is empty. My side = the "heroes" (local: team 1; online: own side).
   local mySide = (V.online and V.online.me) or "A"
@@ -859,6 +862,7 @@ KB.queue = KB.queue or {}
 function KB.drain()
   local q = KB.queue; if #q == 0 then return end
   KB.queue = {}
+  KB.lastUsed = os.clock()   -- footers show keyboard or controller hints by the last device used
   for _, n in ipairs(q) do pcall(KB.handle, n) end
 end
 local shiftKeys = { { KeyName = FName("LeftShift") }, { KeyName = FName("RightShift") } }

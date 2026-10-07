@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Integration test for the relay: two clients say hello, one creates a room, the other joins, a message is relayed.
-Usage: python test_relay.py [host] [port] [key]   (exit code 0 = pass)"""
-import json, socket, sys, time
+"""Integration test for the relay: two clients say hello, one creates a room, the other joins, a message is relayed,
+a game log is uploaded; with a log-page port + admin key, the page must refuse a request without the password and
+list the room log and the uploaded log with it.
+Usage: python test_relay.py [host] [port] [key] [log_page_port admin_key]   (exit code 0 = pass)"""
+import base64, json, socket, sys, time, urllib.error, urllib.request
 
 HOST = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 33033
 KEY = sys.argv[3] if len(sys.argv) > 3 else ""
+HTTP_PORT = int(sys.argv[4]) if len(sys.argv) > 4 else 0
+ADMIN = sys.argv[5] if len(sys.argv) > 5 else ""
 
 
 class Client:
@@ -54,7 +58,26 @@ def main():
     a.send({"t": "msg", "k": "team", "side": "A", "units": [{"kind": "enemy", "row": "AS_Mime"}]})
     m = b.wait(lambda m: m.get("t") == "msg" and m.get("k") == "team", "relayed message")
     assert m["units"][0]["row"] == "AS_Mime" and m.get("from") == "Host", m
-    print("PASS: room %s, message relayed" % room)
+    b.send({"t": "log", "id": "t1", "part": 1, "parts": 1, "name": "versus.log", "reason": "test", "text": "12:00:00 VS test line\n"})
+    b.wait(lambda m: m.get("t") == "log_ok" and m.get("id") == "t1", "log_ok for the upload")
+    print("PASS: room %s, message relayed, log uploaded" % room)
+    if HTTP_PORT:
+        base = "http://%s:%d/" % (HOST, HTTP_PORT)
+        try:
+            urllib.request.urlopen(base, timeout=5)
+            raise SystemExit("FAIL: log page answered without the password")
+        except urllib.error.HTTPError as e:
+            if e.code != 401:
+                raise SystemExit("FAIL: log page without password: HTTP %d" % e.code)
+        req = urllib.request.Request(base, headers={"Authorization": "Basic " + base64.b64encode(("admin:" + ADMIN).encode()).decode()})
+        page = urllib.request.urlopen(req, timeout=5).read().decode()
+        if "_" + room + ".jsonl" not in page or "_Guest_test.log" not in page:
+            raise SystemExit("FAIL: log page does not list the room log and the upload")
+        name = page.split('href="/f/players/')[1].split('"')[0]
+        req = urllib.request.Request(base + "f/players/" + name, headers=req.headers)
+        if "VS test line" not in urllib.request.urlopen(req, timeout=5).read().decode():
+            raise SystemExit("FAIL: uploaded log content")
+        print("PASS: log page (401 without password, listing + file with it)")
 
 
 if __name__ == "__main__":

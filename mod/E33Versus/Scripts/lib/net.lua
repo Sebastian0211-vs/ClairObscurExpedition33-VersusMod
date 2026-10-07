@@ -45,7 +45,8 @@ end
 function NET.connect(server, name)
   NET.start()
   NET.server = server
-  NET.send({ t = "connect", host = server.host, port = tonumber(server.port) or 33033, name = name or NET.playerName(), key = server.key or "" })
+  NET.send({ t = "connect", host = server.host, port = tonumber(server.port) or 33033, name = name or NET.playerName(), key = server.key or "",
+    mod = E33V_VERSION })
 end
 function NET.playerName()
   local n = os.getenv("USERNAME") or "player"

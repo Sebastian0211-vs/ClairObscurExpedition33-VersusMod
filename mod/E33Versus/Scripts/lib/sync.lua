@@ -178,6 +178,7 @@ end
 function SYNC.onTurnMsg(m)
   if V.online and m.n and V.online.turnN and m.n == V.online.turnN and m.uid ~= V.online.lastActor then
     slog(("DESYNC turn %d: here %s, opponent %s"):format(m.n, tostring(V.online.lastActor), tostring(m.uid)))
+    if not V.online.desyncSent then V.online.desyncSent = true; pcall(ONLINE.uploadLog, "desync") end
   end
 end
 function SYNC.install()
