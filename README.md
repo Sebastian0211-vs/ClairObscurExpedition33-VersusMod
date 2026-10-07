@@ -17,8 +17,11 @@ PC or online.
 
 ## Requirements
 - *Clair Obscur: Expedition 33* (Steam, PC).
-- **UE4SS 3.0.1** for Expedition 33 (the usual community install in `Sandfall\Binaries\Win64`).
-  Release page: <https://github.com/UE4SS-RE/RE-UE4SS/releases>.
+- **UE4SS dev build `716c1e4`** (Dec 2025, reports itself as "v3.0.1 Beta #0 - Git SHA #716c1e4" in `UE4SS.log`).
+  This is the build the mod is tested on. Do **not** use the official `v3.0.1` release (Feb 2024): it is much older.
+  Download `UE4SS_716c1e4_for_E33Versus.zip` from the [v0.1.0 release](../../releases/tag/v0.1.0) and extract it into
+  the game folder (UE4SS is MIT-licensed; the zip holds only UE4SS and its standard mods). Already have UE4SS from the
+  Archipelago randomizer? That is the same build.
 - A save that has at least one Expeditioner. The fight takes place in the world of the save you pick; autosave is
   turned off during versus so your save is not touched.
 - Online: Windows firewall may ask once about `e33net.exe` (the mod's network helper) — allow it.
