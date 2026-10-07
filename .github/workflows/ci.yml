@@ -44,5 +44,6 @@ jobs:
       - name: Container test
         run: |
           docker run -d --name relay -p 33091:33033 -e E33_KEY=ci e33versus-relay:ci
+          sleep 2  # Wait for server to be ready
           python3 server/test_relay.py 127.0.0.1 33091 ci
           docker logs relay
