@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-10-07
 - **Online: see the opponent's parries, dodges and jumps on monster attacks.** The defending player's PC reports the
   outcome of every hit; the attacker's PC plays its own attack a moment later (about half a second plus ping) and makes
   the same hits parried / dodged / jumped, so both screens show the same fight and the same HP.
