@@ -24,7 +24,7 @@ os.execute('mkdir "' .. E33V_DATA:gsub("/", "\\"):gsub("\\$", "") .. '" 2>nul')
 
 local FILES = { "unitlib.lua", "uilib.lua", "picker.lua", "roster_data.lua", "move_data.lua", "arena_data.lua", "versus.lua",
   "battlelib.lua", "economy.lua", "phases.lua", "wheel.lua", "select.lua", "gamepad.lua", "titlebutton.lua", "json.lua",
-  "net.lua", "screens.lua", "online.lua", "sync.lua", "ticker.lua" }
+  "net.lua", "screens.lua", "online.lua", "sync.lua", "defense.lua", "ticker.lua" }
 function E33V_LOADALL(tag)
   local bad = 0
   for _, f in ipairs(FILES) do

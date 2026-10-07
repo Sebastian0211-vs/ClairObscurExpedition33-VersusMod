@@ -588,6 +588,25 @@ function V.pickBattleMap()
   return maps[1]
 end
 -- Returns true when a level change was started (the fight continues once the new world is ready).
+-- Travel through the game's own map change (FL_jRPG_CustomFunctionLibrary:ChangeMapByAssetName -> GI ChangeMap):
+-- it applies the level's DT_LevelData parameters (screen-space fog scattering, audio...). A raw console "open" skipped
+-- them: wrong rendering after an arena teleport (issue #4). Console "open" stays as the fallback.
+function V.levelSpawn(level)
+  for _, a in ipairs(ARENAS or {}) do if a.level == level then return a.spawn end end
+end
+function V.travelTo(level)
+  local pc = FindFirstOf("PlayerController")
+  local spawn = V.levelSpawn(level)
+  local ok, err = false, "no spawn point for " .. tostring(level)
+  if spawn and spawn ~= "" then
+    ok, err = pcall(function()
+      local fl = StaticFindObject("/Game/jRPGTemplate/Blueprints/Basics/FL_jRPG_CustomFunctionLibrary.Default__FL_jRPG_CustomFunctionLibrary_C")
+      fl:ChangeMapByAssetName(FName(level), { TagName = FName(spawn) }, pc)
+    end)
+  end
+  log(("travel %s via ChangeMap (%s): %s"):format(level, tostring(spawn), ok and "ok" or ("FAILED " .. tostring(err) .. " -> console open")))
+  if not ok then StaticFindObject("/Script/Engine.Default__KismetSystemLibrary"):ExecuteConsoleCommand(pc, "open " .. level, pc) end
+end
 function V.travelIfNeeded()
   local a = V.cfg.arenaId and V.arenaById(V.cfg.arenaId)
   -- Rematch in the same world: reload the level first. A second battle in a world runs on new battle objects while
@@ -598,8 +617,7 @@ function V.travelIfNeeded()
     if V.travelTried ~= lvl then
       V.travelTried = lvl
       log("rematch: reloading " .. lvl .. " for a clean battle")
-      local pc = FindFirstOf("PlayerController")
-      StaticFindObject("/Script/Engine.Default__KismetSystemLibrary"):ExecuteConsoleCommand(pc, "open " .. lvl, pc)
+      V.travelTo(lvl)
       return true
     end
     return false
@@ -608,8 +626,7 @@ function V.travelIfNeeded()
   if V.travelTried == a.level then log("travel to " .. a.level .. " did not happen, fighting here"); return false end
   V.travelTried = a.level
   log("travel: " .. V.currentLevel() .. " -> " .. a.level .. " (" .. a.name .. ")")
-  local pc = FindFirstOf("PlayerController")
-  StaticFindObject("/Script/Engine.Default__KismetSystemLibrary"):ExecuteConsoleCommand(pc, "open " .. a.level, pc)
+  V.travelTo(a.level)
   return true
 end
 -- A raw level open skips the game's fade-in: lift the camera fade so exploration is not left black.
@@ -741,7 +758,19 @@ function V.hookTurns()
   E33V_TURNS_HOOKED = ok
   log("turn hook: " .. tostring(ok) .. (ok and "" or (" " .. tostring(err))))
 end
-function V.onF6() if V.inWorld() then SEL.open() else V.menuTitle() end end
+function V.onF6()
+  -- online room: F6 never drops to local versus (issue #3). During a match it does nothing; after one it opens the
+  -- online select screen of the same room (new teams + both Ready = rematch).
+  if ONLINE and ONLINE.inRoom() then
+    if ONLINE.battleRunning() then
+      pcall(function() U.bm():ShowBattleMenuTooltip(FText("Online match in progress"), FText("Finish the match first")) end)
+      return
+    end
+    if not SEL.active then ONLINE.enterSelect() end
+    return
+  end
+  if V.inWorld() then SEL.open() else V.menuTitle() end
+end
 -- Per-frame work. Hooks only call V.* so that reloading this file updates behaviour.
 function V.tick(pc)
   if V.loadCheck() then return end

@@ -177,9 +177,15 @@ function ONLINE.maybeGo()
   NET.msg("go", go)
   ONLINE.go(go)
 end
+-- An online match is running from "go" until its end screen. (The battle manager's arrays stay filled after a match
+-- ended, which made Ready say "a battle is still running" with nothing running: issue #3.)
 function ONLINE.battleRunning()
-  local bm = U.bm()
-  return bm and bm:IsValid() and (#bm.PlayerCharacters > 0 or #bm.Enemies > 0)
+  return V.online ~= nil and (V.fightWhenReady ~= nil or V.online.inMatch == true) and not V.ended
+end
+function ONLINE.inRoom() return NET.status.room ~= nil and NET.status.state == "online" end
+-- The opponent opened the select screen after a match (F6): open it here too so their team / ready state lands.
+function ONLINE.followPeer()
+  if not SEL.online and ONLINE.inRoom() and not ONLINE.battleRunning() then ONLINE.enterSelect() end
 end
 function ONLINE.go(g)
   V.cfg.A, V.cfg.B = ONLINE.unpackTeam(g.A), ONLINE.unpackTeam(g.B)
@@ -213,11 +219,13 @@ function ONLINE.installHandlers()
     ONLINE.roomScreen()
   end)
   NET.on("msg:team", function(m)
+    ONLINE.followPeer()
     if not SEL.online or m.side == SEL.online.me then return end
     V.cfg[m.side] = ONLINE.unpackTeam(m.units)
     if SEL.active then SEL.build() end
   end)
   NET.on("msg:ready", function(m)
+    ONLINE.followPeer()
     if not SEL.online or m.side == SEL.online.me then return end
     SEL.online.ready[m.side] = m.ready and true or false
     ONLINE.maybeGo()

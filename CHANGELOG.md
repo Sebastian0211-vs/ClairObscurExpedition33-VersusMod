@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+- **Online: see the opponent's parries, dodges and jumps on monster attacks.** The defending player's PC reports the
+  outcome of every hit; the attacker's PC plays its own attack a moment later (about half a second plus ping) and makes
+  the same hits parried / dodged / jumped, so both screens show the same fight and the same HP.
+- **Fix: F6 in an online room** (#3) no longer drops you into local versus. During a match it does nothing; after a
+  match it opens the room's select screen on both PCs (new teams + both Ready = rematch).
+- **Fix: arena travel rendering** (#4). Travel now uses the game's own map change, which applies each level's fog and
+  audio settings (the raw console "open" skipped them).
+
 ## 0.1.2 - 2026-10-07
 - **Fix: online fight started for one player only.** A PC sent "loaded" only while it was still waiting, so the PC that
   finished loading first waited forever. Now each PC always announces it is ready (verified against a test peer that

@@ -35,7 +35,8 @@ function SYNC.onTurn(c)
     SYNC.turnSnap = (SYNC.mine(c) and not P.isEnemyClass(c)) and SYNC.hpSnap() or nil
   end
   SYNC.lastUnit = c
-  SYNC.hookActionStart(); SYNC.hookHero()   -- battle classes are loaded by now (no-ops once installed)
+  SYNC.hookActionStart(); SYNC.hookHero(); DEF.install()   -- battle classes are loaded by now (no-ops once installed)
+  if not same then DEF.stop() end
   slog("turn start " .. tostring(SYNC.uid(c)) .. (SYNC.mine(c) and " (mine)" or " (opponent)"))
   local uid = SYNC.uid(c); if not uid then return false end
   V.online.turnN = (V.online.turnN or 0) + 1
@@ -77,7 +78,16 @@ function SYNC.wrap()
   if P.execute ~= SYNC.execW then
     local exec = P.execute
     SYNC.execW = function(u, move, target)
-      SYNC.sendAct(u, "move", { move = move.prop, target = SYNC.uid(target) })
+      if SYNC.active() and SYNC.mine(u) and not SYNC.applying then
+        -- my monster attacks: send now, play it a little later so the defender's hit outcomes (parry, dodge...) reach
+        -- this PC before the same hits land here (defense.lua)
+        SYNC.sendAct(u, "move", { move = move.prop, target = SYNC.uid(target) })
+        DEF.begin(u)
+        local d = SYNC.delay()
+        slog(("my move starts in %.2f s"):format(d))
+        SYNC.after(d, function() exec(u, move, target) end)
+        return
+      end
       return exec(u, move, target)
     end
     P.execute = SYNC.execW
@@ -119,6 +129,7 @@ function SYNC.tryApply()
           local target = SYNC.unit(m.target)
           if not (move and target) then error("unknown move/target " .. tostring(m.move) .. " " .. tostring(m.target)) end
           E.snapshot(u, move, target)
+          DEF.begin(u)
           P.execute(u, move, target)
         elseif m.kind == "phaseup" then PH.phaseUp(u); P.wait(u)
         elseif m.kind == "hero" then SYNC.applyShots(m.shots); SYNC.replayHero(u, m)
@@ -175,6 +186,29 @@ function SYNC.install()
   NET.on("msg:act", SYNC.onAct)
   NET.on("msg:state", SYNC.onState)
   NET.on("msg:turn", SYNC.onTurnMsg)
+  NET.on("msg:hit", DEF.onHit)
+end
+
+-- ---------- timing ----------
+-- Head start the defender's PC gets on my monster attacks: the outcome of each hit must travel back before the same
+-- hit lands here. Round trip (sidecar ping) + the run-to-run variation of attack timing (~0.35 s measured).
+function SYNC.delay()
+  local rtt = (tonumber(NET.status.ping_ms) or 100) / 1000
+  return math.min(1.2, 0.45 + 1.5 * rtt)
+end
+SYNC.later = SYNC.later or {}
+function SYNC.after(sec, fn) SYNC.later[#SYNC.later + 1] = { at = os.clock() + sec, fn = fn } end
+-- per frame (ticker.lua)
+function SYNC.tick()
+  if #SYNC.later > 0 then
+    local now, keep = os.clock(), {}
+    for _, j in ipairs(SYNC.later) do
+      if now >= j.at then local ok, err = pcall(j.fn); if not ok then slog("scheduled call failed: " .. tostring(err)) end
+      else keep[#keep + 1] = j end
+    end
+    SYNC.later = keep
+  end
+  if DEF and DEF.frame then DEF.frame() end
 end
 
 -- ---------- defender-only QTE ----------
