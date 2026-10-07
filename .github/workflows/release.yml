@@ -1,0 +1,86 @@
+name: Release
+
+# Push a tag like v0.1.0 -> checks, then:
+#   - E33Versus-<tag>.zip         install-ready mod (extract into the game folder), network sidecar built as e33net.exe
+#   - E33Versus-relay-<tag>.zip   relay server folder (Docker / systemd / plain python)
+#   - ghcr.io/<owner>/e33versus-relay:<tag> and :latest
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  mod:
+    needs: checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the network sidecar (no Python needed on players' PCs)
+        run: |
+          pip install pyinstaller==6.*
+          pyinstaller --onefile --noconsole --name e33net --distpath build/bin --workpath build/work --specpath build sidecar/e33net.py
+
+      - name: Assemble the package (laid out as it installs)
+        shell: bash
+        run: |
+          VER="${GITHUB_REF_NAME}"
+          P="package/Sandfall/Binaries/Win64/ue4ss/Mods/E33Versus"
+          mkdir -p "$P/Scripts" "$P/bin"
+          cp mod/E33Versus/Scripts/main.lua mod/E33Versus/Scripts/move_costs.tsv "$P/Scripts/"
+          cp -r mod/E33Versus/Scripts/lib "$P/Scripts/"
+          echo "E33V_VERSION = \"${VER}\"" > "$P/Scripts/version.lua"
+          cp build/bin/e33net.exe "$P/bin/"
+          echo "1" > "$P/enabled.txt"
+          cp README.md LICENSE CHANGELOG.md package/
+          (cd package && 7z a -tzip "../E33Versus-${VER}.zip" . > /dev/null)
+          mkdir -p relay && cp server/e33relay.py server/Dockerfile server/docker-compose.yml server/.env.example \
+            server/e33relay.service server/README.md server/test_relay.py relay/
+          7z a -tzip "E33Versus-relay-${VER}.zip" relay > /dev/null
+          # release notes = this version's CHANGELOG section
+          awk -v v="${VER#v}" '/^## /{p = index($0, v) > 0} p' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "E33 Versus ${VER}" > notes.md
+          ls -la *.zip
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            E33Versus-${{ github.ref_name }}.zip
+            E33Versus-relay-${{ github.ref_name }}.zip
+          body_path: notes.md
+          prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
+
+  relay-image:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image name (lowercase)
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/e33versus-relay" >> "$GITHUB_ENV"
+      - uses: docker/build-push-action@v6
+        with:
+          context: server
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.IMAGE }}:${{ github.ref_name }}
+            ${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=E33 Versus relay server

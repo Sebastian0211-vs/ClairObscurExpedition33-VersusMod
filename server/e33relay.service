@@ -1,0 +1,17 @@
+[Unit]
+Description=E33 Versus relay server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=e33relay
+ExecStart=/usr/bin/python3 /opt/e33relay/e33relay.py --port 33033 --key CHANGE_ME
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

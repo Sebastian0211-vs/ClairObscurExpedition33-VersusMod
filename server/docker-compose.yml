@@ -1,0 +1,18 @@
+# docker compose up -d        (pulls the published image; `docker compose up -d --build` builds it from this folder)
+# Settings come from .env next to this file (copy .env.example).
+services:
+  relay:
+    image: ghcr.io/sebastian0211-vs/e33versus-relay:${E33_TAG:-latest}
+    build: .
+    container_name: e33versus-relay
+    restart: unless-stopped
+    ports:
+      - "${E33_PUBLIC_PORT:-33033}:33033/tcp"
+    environment:
+      E33_KEY: ${E33_KEY:-}
+      E33_MOTD: ${E33_MOTD:-E33 Versus relay}
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"

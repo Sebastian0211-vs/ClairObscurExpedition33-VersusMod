@@ -1,0 +1,14 @@
+# developer-only config and runtime output (never shipped)
+mod/E33Versus/Scripts/dev.lua
+mod/E33Versus/Scripts/version.lua
+mod/E33Versus/data/
+mod/E33Versus/bin/
+# build output
+build/
+package/
+relay/
+*.zip
+*.spec
+__pycache__/
+*.pyc
+server/.env

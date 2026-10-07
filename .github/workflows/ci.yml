@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lua syntax (UE4SS 3.0.1 runs Lua 5.4)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq lua5.4
+          find mod -name '*.lua' -print0 | xargs -0 -n1 luac5.4 -p
+          echo "lua ok: $(find mod -name '*.lua' | wc -l) files"
+
+      - name: No developer paths or dev config in the mod
+        run: |
+          if grep -rn "C:/Users/" mod --include='*.lua' | grep -v "Scripts/dev.lua"; then echo "absolute user path in the mod"; exit 1; fi
+          test ! -e mod/E33Versus/Scripts/dev.lua
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python compile
+        run: python -m py_compile sidecar/e33net.py server/e33relay.py server/test_relay.py tools/fakepeer.py
+
+      - name: Relay integration test (python)
+        run: |
+          E33_PORT=33090 E33_KEY=ci python server/e33relay.py &
+          python server/test_relay.py 127.0.0.1 33090 ci
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build relay image
+        run: docker build -t e33versus-relay:ci server
+      - name: Container test
+        run: |
+          docker run -d --name relay -p 33091:33033 -e E33_KEY=ci e33versus-relay:ci
+          python3 server/test_relay.py 127.0.0.1 33091 ci
+          docker logs relay
