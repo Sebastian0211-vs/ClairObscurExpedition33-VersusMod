@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1 - 2026-10-07
+- **Fix: monsters froze on a gamepad Attack** (walked up to the target and stood there). The controller's Attack skips
+  the call the mod listened for; any unclassified action now plays the unit's basic move.
+- **Fix: online match started on one PC only.** The network helper quit when the game had not checked in for 30 s,
+  which a save pick + load can exceed; the late PC lost its connection after receiving the "loaded" message. The helper
+  now stays while the game process runs.
+- README: the required UE4SS is the dev build `716c1e4`, not the official v3.0.1 release.
+
 ## 0.1.0 - 2026-10-07
 First public test build.
 

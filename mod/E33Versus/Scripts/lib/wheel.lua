@@ -361,6 +361,7 @@ end
 function WH.cbSelectAction(ctx, t)
   local c = WH.cur; if not (c and c.choosing) then return end
   local ok, v = pcall(function() return t:get() end)
+  log(("SelectAction %s %s"):format(tostring(ok), tostring(v)))
   if ok and v == 1 then   -- Attack -> basic move
     c.pending = { move = c.basic, cost = 0, basic = true }
     U.bm().SelectedAction = 0
@@ -369,6 +370,7 @@ end
 function WH.cbSelectSecondary(ctx, n)
   local c = WH.cur; if not (c and c.choosing) then return end
   local ok, v = pcall(function() return n:get():ToString() end)
+  log(("SelectSecondary %s %s"):format(tostring(ok), tostring(v)))
   if not ok then return end
   local bm = U.bm()
   local entry = c.byNameMove[v]
@@ -376,7 +378,17 @@ function WH.cbSelectSecondary(ctx, n)
   elseif bm.SelectedAction == 3 then c.pending = { item = v }; bm.SelectedAction = 0 end   -- monster items: see WH.applyItem
 end
 function WH.cbRequest(ctx, targets)
-  local c = WH.cur; if not (c and c.choosing and c.pending) then return end
+  local c = WH.cur; if not (c and c.choosing) then return end
+  if not c.pending then
+    -- Gamepad Attack: the controller path never calls SelectAction (verified 2026-10-07: request arrives with
+    -- SelectedAction 1 or 0 and no SelectAction call). Left alone, the game runs its hero attack on the monster: it
+    -- walks up to the target and stands there (no hero animation). Treat it as Attack = the basic move.
+    local sa; pcall(function() sa = U.bm().SelectedAction end)
+    log(("request with no choice (SelectedAction %s) -> basic move"):format(tostring(sa)))
+    if not c.basic then return end
+    c.pending = { move = c.basic, cost = 0, basic = true }
+    pcall(function() U.bm().SelectedAction = 0 end)
+  end
   local u = c.u
   local st = u.AC_jRPG_CharacterStats
   local tgts = {}

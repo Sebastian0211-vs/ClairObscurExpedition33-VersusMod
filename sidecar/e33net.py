@@ -10,10 +10,11 @@ Game <-> sidecar through two append-only JSON-lines files in BRIDGE (--bridge: t
   in.jsonl         appended here for the game: every relay message, plus {"t":"net","state":...} events.
                    The game empties both files before launching the sidecar; the sidecar never truncates them.
   status.json      {"state":"offline|connecting|online","room","role","peer","ping_ms","server"}
-  alive            the game touches it every few seconds; if it goes stale for 30 s the sidecar exits.
+  alive            the game touches it every few seconds; once it is stale for 30 s the sidecar exits if the game
+                   process is gone (a save load can keep it stale for minutes), or after 15 min regardless.
 Run: pythonw e33net.py [--bridge DIR]
 """
-import argparse, json, os, socket, threading, time
+import argparse, json, os, socket, subprocess, threading, time
 
 PROTO = 1
 
@@ -152,6 +153,22 @@ class Net:
         return out
 
     # ---- main loop ----
+    GAME_EXE = "SandFall-Win64-Shipping.exe"
+
+    def game_running(self, now):
+        """True while the game process exists (checked at most every 5 s). Non-Windows: assume yes."""
+        if now - getattr(self, "_game_at", 0) < 5:
+            return self._game_up
+        self._game_at = now
+        try:
+            out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq " + self.GAME_EXE, "/NH"], capture_output=True,
+                                 stdin=subprocess.DEVNULL, text=True, timeout=10,
+                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+            self._game_up = self.GAME_EXE.lower() in out.lower()
+        except (OSError, subprocess.SubprocessError):
+            self._game_up = True
+        return self._game_up
+
     def run(self):
         last_ping, started = 0, time.time()
         while True:
@@ -171,10 +188,12 @@ class Net:
                 self.send({"t": "ping"})
             alive = os.path.join(self.dir, "alive")
             try:
-                stale = now - os.path.getmtime(alive) > 30
+                idle = now - os.path.getmtime(alive)
             except OSError:
-                stale = now - started > 30
-            if stale:
+                idle = now - started
+            # The game's Lua does not run while a save loads or the save list is open, so "alive" can go stale for
+            # minutes in a normal match start. Leave only when the game process is really gone (or after 15 min).
+            if idle > 30 and (idle > 900 or not self.game_running(now)):
                 self.disconnect(quiet=True); self.event("offline", error="game closed"); return
             time.sleep(0.05)
 
