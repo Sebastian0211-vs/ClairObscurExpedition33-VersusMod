@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - 2026-10-07
 - **Versus AI**: play alone against the computer (VERSUS -> Versus AI). Build both teams, or leave team 2 empty for a
   random one within the cap. AI monsters and bosses use their own moves on the AP economy (and the phase-up super
   move); AI heroes attack with an imperfect number of combo presses.
