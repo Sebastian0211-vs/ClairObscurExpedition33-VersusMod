@@ -42,6 +42,7 @@ end
 
 function AI.monsterTurn(u)
   if not (u and u:IsValid()) or V.ended then return end
+  if WH.charmedTurn(u) then return end
   local a = u:GetAddress()
   -- boss super move when allowed (low HP, enough AP): the game's own phase change
   if PH and PH.canPhaseUp(u) and math.random() < 0.6 then

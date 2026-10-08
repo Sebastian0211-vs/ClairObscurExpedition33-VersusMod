@@ -79,12 +79,11 @@ function SCR.build()
     local y = y0 + (i - 1) * (ih + 14)
     local sel = i == SCR.sel
     place(image(SEL.T.slot, it.disabled and { 1, 1, 1, 0.35 } or { 1, 1, 1, 1 }), x0, y, iw, ih)
-    if sel then
-      local g = C("GOLD")
-      bar(x0 - 4, y - 4, iw + 8, 3, g); bar(x0 - 4, y + ih + 1, iw + 8, 3, g)
-      bar(x0 - 4, y - 4, 3, ih + 8, g); bar(x0 + iw + 1, y - 4, 3, ih + 8, g)
+    if sel then   -- the game's own hover highlight (#10)
+      local b = SEL.hoverButton()
+      if b then place(b, x0, y, iw, ih); SCR.hoverBtn = b end
     end
-    local col = it.disabled and C("GREY") or (sel and C("GOLD") or C("WHITE"))
+    local col = it.disabled and C("GREY") or (sel and C("WHITE") or { 0.62, 0.60, 0.56 })
     if it.input then
       -- our own text field (an engine text box never gets keyboard focus under the game's menu system)
       local typing = SCR.typing == i
@@ -112,11 +111,13 @@ function SCR.build()
     end
   end
   if SCR.msg then place(ctext(tree, SCR.msg, "body", C("RED"), 18), x0, H - 110); SCR.msg = nil end
-  place(ctext(tree, def.footer or "Up/Down move    Enter select    Backspace back", "small", C("GREY"), 14), x0, H - 52)
+  if def.footer then place(ctext(tree, def.footer, "small", C("GREY"), 14), x0, H - 52)
+  else place(SEL.prompts(tree, "menu", 30), x0, H - 54) end   -- game-style button prompts (#9)
 
   uw:AddToViewport(1100)
   SCR.widget = uw
   SEL.applyColors()
+  SEL.hoverNow(SCR.hoverBtn); SCR.hoverBtn = nil
 end
 
 function SCR.inputText(i) return SCR.def.items[i].input.value or "" end

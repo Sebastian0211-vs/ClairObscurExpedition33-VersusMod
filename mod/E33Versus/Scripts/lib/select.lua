@@ -130,6 +130,28 @@ local function ctext(tree, s, style, color, size)
 end
 -- Linear colour values (UMG tints are linear: sRGB gold 0.86,0.70,0.40 ~ linear 0.72,0.45,0.13)
 SEL._ctext = ctext
+SEL._new = function(tree, path) return new(tree, path) end
+-- Selection highlight like the game's menus (#10): one of the game's own buttons (WBP_BaseButton), sized to the
+-- selected entry, never taking input. Call SEL.hoverNow(btn) once the screen is in the viewport: its hover stain
+-- animates in exactly like a hovered button in the game's menus.
+SEL.BUTTON = "/Game/UI/Widgets/CommonElements/Buttons/WBP_BaseButton.WBP_BaseButton_C"
+function SEL.hoverButton()
+  local c = StaticFindObject(SEL.BUTTON)
+  if not (c and c:IsValid()) then pcall(LoadAsset, "/Game/UI/Widgets/CommonElements/Buttons/WBP_BaseButton"); c = StaticFindObject(SEL.BUTTON) end
+  if not (c and c:IsValid()) then return nil end
+  local pc = (TICK and TICK.pc and TICK.pc:IsValid()) and TICK.pc or FindFirstOf("PlayerController")
+  local b = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(pc, c, pc)
+  if not (b and b:IsValid()) then return nil end
+  pcall(function() b.HasHoverStain = true; b.HideBackgroundWhenNotFocused = true end)
+  b:SetVisibility(3)   -- HitTestInvisible: drawn only, the mouse and focus never reach it
+  return b
+end
+function SEL.hoverNow(b) if b and b:IsValid() then pcall(function() b:BP_OnHovered() end) end end
+SEL._image = function(tree, path)
+  local img = new(tree, "/Script/UMG.Image"); local t = SEL.tex(path)
+  if t then img:SetBrushFromTexture(t, false) else img:SetColorAndOpacity({ R = 1, G = 1, B = 1, A = 0 }) end
+  return img
+end
 local GOLD, WHITE, GREY, RED = { 0.72, 0.45, 0.13 }, { 0.9, 0.88, 0.84 }, { 0.30, 0.29, 0.27 }, { 0.70, 0.07, 0.04 }
 SEL.COLORS = { GOLD = GOLD, WHITE = WHITE, GREY = GREY, RED = RED }
 
@@ -192,9 +214,9 @@ function SEL.build()
     tabs:AddChildToHorizontalBox(ov)
   end
   if not SEL.arenaMode then   -- the arena/music picker draws its own tabs here
-    place(ctext(tree, "Q", "small", GREY, 14), gx0 - 24, 44)
+    place(SEL.promptKey(tree, "LB", "Q", 30), gx0 - 40, 39)
     place(tabs, gx0, 32)
-    place(ctext(tree, "E", "small", GREY, 14), gx0 + 150 * #SEL.CAT_SHORT + 8, 44)
+    place(SEL.promptKey(tree, "RB", "E", 30), gx0 + 150 * #SEL.CAT_SHORT + 8, 39)
   end
 
   -- team columns
@@ -247,12 +269,8 @@ function SEL.build()
     if col < cols then
       local x = gx0 + col * (cw + 20); local y = 190 + row * rh
       local on = lo.chosen[m.prop]; local sel = i == lo.cur
-      place(image(SEL.T.slot, sel and { 1, 0.85, 0.55, 1 } or (on and { 1, 1, 1, 0.95 } or { 1, 1, 1, 0.3 })), x, y, cw, rh - 6)
-      if sel then
-        for _, r in ipairs({ { x - 3, y - 3, cw + 6, 2 }, { x - 3, y + rh - 7, cw + 6, 2 } }) do
-          local bar = new(tree, "/Script/UMG.Image"); bar:SetColorAndOpacity({ R = 0.72, G = 0.45, B = 0.13, A = 1 }); place(bar, r[1], r[2], r[3], r[4])
-        end
-      end
+      place(image(SEL.T.slot, (on or sel) and { 1, 1, 1, 0.95 } or { 1, 1, 1, 0.3 }), x, y, cw, rh - 6)
+      if sel then local b = SEL.hoverButton(); if b then place(b, x, y, cw, rh - 6); SEL.hoverBtn = b end end   -- #10
       local label = SEL.cut(m.label, 26) .. ((m.phase and m.phase > 1) and ("  (Phase " .. m.phase .. ")") or "")
       place(ctext(tree, (on and "+  " or "    ") .. label, "body", on and GOLD or (sel and WHITE or GREY), 17), x + 18, y + 12)
       place(ctext(tree, m.cost .. " AP", "num", on and GOLD or GREY, 17), x + cw - 70, y + 12)
@@ -274,7 +292,8 @@ function SEL.build()
     local k = i - first - 1
     local x = gx0 + math.floor(k / perCol) * (cw + 20); local y = 170 + (k % perCol) * rh
     local sel, chosen = i == SEL.mcur, V.cfg.music == m.id
-    place(image(SEL.T.slot, sel and { 1, 0.85, 0.55, 1 } or (chosen and { 1, 1, 1, 0.95 } or { 1, 1, 1, 0.3 })), x, y, cw, rh - 6)
+    place(image(SEL.T.slot, (chosen or sel) and { 1, 1, 1, 0.95 } or { 1, 1, 1, 0.3 }), x, y, cw, rh - 6)
+    if sel then local b = SEL.hoverButton(); if b then place(b, x, y, cw, rh - 6); SEL.hoverBtn = b end end   -- #10
     place(ctext(tree, (chosen and "> " or "   ") .. SEL.cut(m.name, 40), "body", chosen and GOLD or (sel and WHITE or GREY), 16), x + 16, y + 10)
   end
   place(ctext(tree, ("%d / %d"):format(math.floor(first / perPage) + 1, math.max(1, math.ceil(#list / perPage))), "small", GREY, 14), gx1 - 60, 170 + perCol * rh)
@@ -282,7 +301,7 @@ function SEL.build()
   place(image(SEL.T.detail, { 1, 1, 1, 0.97 }), gx0 - 10, dy, (gx1 - gx0) + 20, 230)
   place(ctext(tree, "Fight music", "h2", GOLD, 26), gx0 + 30, dy + 36)
   place(ctext(tree, "Chosen: " .. MU.label(V.cfg.music), "body", WHITE, 18), gx0 + 30, dy + 86)
-  place(ctext(tree, SEL.hint("music"), "small", GREY, 15), gx0 + 30, dy + 130)
+  place(SEL.prompts(tree, "music", 28), gx0 + 30, dy + 130)
   elseif SEL.arenaMode then
   -- arena grid: locations with their artwork (F7 toggles)
   SEL.drawPickTabs(tree, place, gx0)
@@ -321,7 +340,7 @@ function SEL.build()
     if ca.icon then place(image(ca.icon), gx0 + 30, dy + 20, 350, 189) end
     place(ctext(tree, SEL.arenaName(ca), "h2", GOLD, 26), gx0 + 400, dy + 36)
     place(ctext(tree, ca.id and "Both players travel here for the fight" or "Fight where the loaded save stands", "body", WHITE, 17), gx0 + 400, dy + 86)
-    place(ctext(tree, SEL.hint("arena"), "small", GREY, 15), gx0 + 400, dy + 130)
+    place(SEL.prompts(tree, "arena", 28), gx0 + 400, dy + 130)
   end
   else
   -- card grid
@@ -384,18 +403,26 @@ function SEL.build()
 
   end
   -- footer
-  local keysHelp = SEL.hint(SEL.lo and "loadout" or (SEL.online and "online" or "grid"))
+  -- footer: the match settings with the buttons that change them, then the screen's button prompts (#9)
   local cur = V.cfg.arenaId and V.arenaById(V.cfg.arenaId)
-  local pad = SEL.usingPad()
-  local footer = ("Arena: %s   Music: %s  (%s)      Level %s  (%s)      " .. keysHelp)
-    :format(cur and SEL.cut(SEL.arenaName(cur), 18) or "save location", SEL.cut(MU.label(V.cfg.music), 22), pad and "LT" or "F7",
-      V.cfg.level and tostring(V.cfg.level) or "auto", pad and "RT" or "F8")
-  place(ctext(tree, footer, "small", GREY, 14), gx0, H - 52)
+  local function seg(pad, kb, label, y)   -- under the team 1 column
+    local row = new(tree, "/Script/UMG.HorizontalBox")
+    local s = row:AddChildToHorizontalBox(SEL.promptKey(tree, pad, kb, 28)); s:SetVerticalAlignment(2)
+    local l = row:AddChildToHorizontalBox(ctext(tree, label, "body", WHITE, 17)); l:SetVerticalAlignment(2)
+    l:SetPadding({ Left = 10, Top = 0, Right = 0, Bottom = 0 })
+    place(row, 70, y)
+  end
+  seg("LT", "F7", ("Arena: %s    Music: %s"):format(cur and SEL.cut(SEL.arenaName(cur), 18) or "save location", SEL.cut(MU.label(V.cfg.music), 22)), H - 150)
+  seg("RT", "F8", "Level " .. (V.cfg.level and tostring(V.cfg.level) or "auto"), H - 108)
+  if not SEL.arenaMode then   -- the arena / music picker shows its own prompts in its panel
+    place(SEL.prompts(tree, SEL.lo and "loadout" or (SEL.online and "online" or "grid"), 30), gx0, H - 54)
+  end
   if SEL.msg then place(ctext(tree, SEL.msg, "body", RED, 18), gx0, H - 340); SEL.msg = nil end
 
   uw:AddToViewport(1100)
   SEL.widget = uw
   SEL.applyColors()
+  SEL.hoverNow(SEL.hoverBtn); SEL.hoverBtn = nil
 end
 
 function SEL.applyColors()
@@ -425,23 +452,78 @@ end
 -- Controller buttons come from gamepad.lua GP.MAP: A pick, B back/remove, Y team, X start/ready, LB/RB tabs,
 -- LT arena+music, RT level, R3 moves, L3+R3 open/close.
 function SEL.usingPad() return GP and GP.lastUsed ~= nil and GP.lastUsed >= ((KB and KB.lastUsed) or -1) end
-SEL.HINTS = {
-  grid = { "Arrows move   Enter pick   Backspace remove   Tab team   Space start   F6 close",
-           "D-pad move   A pick   B remove   Y team   X start   LB/RB category   R3 moves   L3+R3 close" },
-  online = { "Arrows move   Enter pick   Backspace remove   Space ready",
-             "D-pad move   A pick   B remove   X ready   LB/RB category   R3 moves" },
-  loadout = { "Arrows move   Enter add / remove   Space or Backspace done",
-              "D-pad move   A add / remove   X or B done" },
-  arena = { "Enter choose   Q/E music tab   Backspace / F7 back", "A choose   LB/RB music tab   B / LT back" },
-  music = { "Enter choose   Q/E arena tab   Backspace / F7 back", "A choose   LB/RB arena tab   B / LT back" },
+-- Button prompts drawn like the game's own (#9): the game's controller icons, or its keyboard key frame with the key.
+-- Each entry: { pad button, keyboard key, label }; buttons: see SEL.PAD_ICON, keys: SEL.KB_ICON or a key name.
+local INPUTS = "/Game/UI/Resources/Textures/Generic/Inputs/"
+SEL.PAD_ICON = {
+  A = "Generic/T_UI_Gamepad_Generic_FaceButton_Bottom", B = "Generic/T_UI_Gamepad_Generic_FaceButton_Right",
+  X = "Generic/T_UI_Gamepad_Generic_FaceButton_Left", Y = "Generic/T_UI_Gamepad_Generic_FaceButton_Top",
+  LB = "Generic/T_UI_Gamepad_Generic_LeftShoulder", RB = "Generic/T_UI_Gamepad_Generic_RightShoulder",
+  LT = "Generic/T_UI_Gamepad_Generic_LeftTrigger", RT = "Generic/T_UI_Gamepad_Generic_RightTrigger",
+  DPAD = "Common/T_UI_Gamepad_LeftThumbstick", R3 = "Common/T_UI_Gamepad_Generic_RightThumbstickButton",
+  L3 = "Common/T_UI_Gamepad_LeftThumbstickButton",
 }
-function SEL.hint(mode) local h = SEL.HINTS[mode] or SEL.HINTS.grid; return SEL.usingPad() and h[2] or h[1] end
+SEL.KB_ICON = { Arrows = "KeyboardMouse/T_UI_Keyboard_Directional", Tab = "KeyboardMouse/T_UI_Keyboard_Tab",
+  Space = "KeyboardMouse/T_UI_Keyboard_Spacebar" }
+SEL.KEYFRAME = "/Game/UI/Resources/Textures/Buttons/Generic/T_UI_SFKeyFrame"
+SEL.PROMPTS = {
+  grid = { { "DPAD", "Arrows", "Move" }, { "A", "Enter", "Pick" }, { "B", "Backspace", "Remove" }, { "Y", "Tab", "Team" },
+           { "X", "Space", "Start" }, { "R3", "R", "Moves" }, { "L3+R3", "F6", "Close" } },
+  online = { { "DPAD", "Arrows", "Move" }, { "A", "Enter", "Pick" }, { "B", "Backspace", "Remove" },
+             { "X", "Space", "Ready" }, { "R3", "R", "Moves" } },
+  loadout = { { "DPAD", "Arrows", "Move" }, { "A", "Enter", "Add / remove" }, { "X", "Space", "Done" } },
+  arena = { { "A", "Enter", "Choose" }, { "LB/RB", "Q/E", "Music" }, { "B", "Backspace", "Back" } },
+  music = { { "A", "Enter", "Choose" }, { "LB/RB", "Q/E", "Arena" }, { "B", "Backspace", "Back" } },
+  menu = { { "DPAD", "Arrows", "Move" }, { "A", "Enter", "Select" }, { "B", "Backspace", "Back" } },
+}
+-- One button: "A" / "L3+R3" / "LB/RB" (several icons) on a controller; an icon or a framed key name on the keyboard.
+function SEL.promptKey(tree, pad, kb, size)
+  local new, ctext, image = SEL._new, SEL._ctext, SEL._image
+  local box = new(tree, "/Script/UMG.HorizontalBox")
+  local function add(w, gap) local s = box:AddChildToHorizontalBox(w); s:SetVerticalAlignment(2); if gap then s:SetPadding({ Left = gap, Top = 0, Right = 0, Bottom = 0 }) end end
+  local function iconOf(path, w, h)
+    local sb = new(tree, "/Script/UMG.SizeBox"); sb:SetWidthOverride(w or size); sb:SetHeightOverride(h or size)
+    sb:AddChild(image(tree, INPUTS .. path)); return sb
+  end
+  if SEL.usingPad() then
+    local parts = {}; for b in pad:gmatch("[^+/]+") do parts[#parts + 1] = b end
+    for i, b in ipairs(parts) do
+      if i > 1 then add(ctext(tree, pad:find("+", 1, true) and "+" or "/", "small", SEL.COLORS.WHITE, 14), 2) end
+      add(iconOf(SEL.PAD_ICON[b]), i > 1 and 2 or nil)
+    end
+  elseif SEL.KB_ICON[kb] then
+    add(iconOf(SEL.KB_ICON[kb], kb == "Space" and size * 2 or size, size))
+  else
+    -- the game's keyboard key frame, stretched to the key name
+    local sb = new(tree, "/Script/UMG.SizeBox"); sb:SetHeightOverride(size); sb:SetMinDesiredWidth(size)
+    local ov = new(tree, "/Script/UMG.Overlay")
+    local f = ov:AddChildToOverlay(image(tree, SEL.KEYFRAME)); f:SetHorizontalAlignment(0); f:SetVerticalAlignment(0)
+    local t = ov:AddChildToOverlay(ctext(tree, kb, "small", SEL.COLORS.WHITE, math.floor(size * 0.45)))
+    t:SetHorizontalAlignment(2); t:SetVerticalAlignment(2)
+    t:SetPadding({ Left = 7, Top = 0, Right = 7, Bottom = 0 })
+    sb:AddChild(ov)
+    add(sb)
+  end
+  return box
+end
+-- A row of prompts (button + label), like the game's hint bar.
+function SEL.prompts(tree, mode, size)
+  size = size or 30
+  local row = SEL._new(tree, "/Script/UMG.HorizontalBox")
+  for i, e in ipairs(SEL.PROMPTS[mode] or SEL.PROMPTS.grid) do
+    local s = row:AddChildToHorizontalBox(SEL.promptKey(tree, e[1], e[2], size)); s:SetVerticalAlignment(2)
+    if i > 1 then s:SetPadding({ Left = 26, Top = 0, Right = 0, Bottom = 0 }) end
+    local l = row:AddChildToHorizontalBox(SEL._ctext(tree, e[3], "body", SEL.COLORS.WHITE, 17)); l:SetVerticalAlignment(2)
+    l:SetPadding({ Left = 8, Top = 0, Right = 0, Bottom = 0 })
+  end
+  return row
+end
 -- Arena / Music picker tabs (Q/E = LB/RB switch).
 function SEL.drawPickTabs(tree, place, x)
   local music = SEL.atab == "music"
   place(SEL._ctext(tree, "Arena", "h2", music and GREY or GOLD, 26), x, 36)
   place(SEL._ctext(tree, "Music", "h2", music and GOLD or GREY, 26), x + 140, 36)
-  place(SEL._ctext(tree, SEL.usingPad() and "LB / RB" or "Q / E", "small", GREY, 14), x + 280, 46)
+  place(SEL.promptKey(tree, "LB/RB", "Q/E", 30), x + 280, 39)
 end
 function SEL.musicKey(k)
   local list = MU.list(); local n = #list; local pc = SEL.mperCol or 8
