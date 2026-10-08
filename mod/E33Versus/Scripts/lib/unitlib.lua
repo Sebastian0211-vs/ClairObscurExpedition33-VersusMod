@@ -1,6 +1,64 @@
 -- E33 Versus unit helpers (prepend to bridge commands). UE4SS 3.0.1: only flat struct tables, no FString writes.
 U = {}
--- Cached: FindFirstOf walks every object and can crash while a level is loading. Never searched while V.loading.
+-- Object searches (FindFirstOf / FindAllOf walk the engine's whole object list) crash inside UE4SS (+0x2f6cee) when they
+-- run while the engine creates objects on its loading thread: after a level travel and while a battle spawns
+-- (rematches 2026-10-08 10:37, 11:19, 11:28, 11:38). The objects the mod needs are reachable by reference instead:
+-- game instance (persists across levels) -> player controller (GameplayStatics) -> its battle / characters managers,
+-- action executor; game instance -> save manager, music system. FindFirstOf of those classes resolves by reference
+-- first; a real search is the fallback (logged while a load or battle spawn is in progress).
+-- The global wrappers only delegate to U.find1 / U.findAll, so a hot reload updates them.
+function U.gi()
+  local g = E33V_GI
+  if g and g:IsValid() then return g end
+  g = E33V_FF and E33V_FF("BP_jRPG_GI_Custom_C") or FindFirstOf("BP_jRPG_GI_Custom_C")
+  E33V_GI = (g and g:IsValid()) and g or nil
+  return E33V_GI
+end
+local GS
+function U.pc()
+  local gi = U.gi(); if not gi then return nil end
+  if not (GS and GS:IsValid()) then GS = StaticFindObject("/Script/Engine.Default__GameplayStatics") end
+  local ok, pc = pcall(function() return GS:GetPlayerController(gi, 0) end)
+  if ok and pc and pc:IsValid() then return pc end
+end
+local function prop(o, name)
+  if not o then return nil end
+  local ok, v = pcall(function() local x = o[name]; return (x and x.IsValid and x:IsValid()) and x or nil end)
+  if ok then return v end
+end
+-- The exploration controller (BP_jRPG_Controller_World_C): the one that owns a battle manager (the title's does not).
+function U.worldPC()
+  local pc = U.pc()
+  if pc and prop(pc, "AC_jRPG_BattleManager") then return pc end
+end
+U.BYREF = {
+  PlayerController = function() return U.pc() end,
+  BP_jRPG_Controller_World_C = function() return U.worldPC() end,
+  AC_jRPG_BattleManager_C = function() return prop(U.worldPC(), "AC_jRPG_BattleManager") end,
+  AC_jRPG_CharactersManager_C = function() return prop(U.worldPC(), "AC_jRPG_CharactersManager") end,
+  BP_GameActionExecutorComponent_C = function() return prop(U.worldPC(), "BP_GameActionExecutorComponent") end,
+  BP_jRPG_GI_Custom_C = function() return U.gi() end,
+  GameInstance = function() return U.gi() end,
+  BP_SaveManager_C = function() return prop(U.gi(), "SaveManager") end,
+}
+local function watching() return V and V.log and (V.spawnPending or V.loading or os.clock() < (V.searchWatchUntil or 0)) end
+local function trace() return (debug.traceback("", 3):gsub("\n%s*", " | "):sub(1, 300)) end
+function U.find1(c)
+  local r = U.BYREF[c]
+  if r then local ok, o = pcall(r); if ok and o and o:IsValid() then return o end end
+  if watching() then V.log("SEARCH FindFirstOf " .. tostring(c) .. " " .. trace()) end
+  return E33V_FF(c)
+end
+function U.findAll(c)
+  if watching() then V.log("SEARCH FindAllOf " .. tostring(c) .. " " .. trace()) end
+  return E33V_FA(c)
+end
+if not E33V_FIND_WRAPPED then
+  E33V_FIND_WRAPPED = true
+  E33V_FF, E33V_FA = FindFirstOf, FindAllOf
+  FindFirstOf = function(c) return U.find1(c) end
+  FindAllOf = function(c) return U.findAll(c) end
+end
 function U.bm()
   if U._bm and U._bm:IsValid() then return U._bm end
   if V and V.loading then return nil end
@@ -9,7 +67,12 @@ function U.bm()
 end
 -- A later battle in the same world can run on a NEW battle manager instance while the old one stays valid
 -- (11:46 rematch: cached P=0 E=0, live one P=1 E=1). Prefer the instance that has units; drop the cache with U.bmReset().
-function U.findBM()
+-- The world controller's own battle manager: a property read, no object search (FindAllOf while a battle's assets
+-- stream in crashed inside UE4SS, 2026-10-08 rematch).
+function U.bmFromPC() return prop(U.worldPC(), "AC_jRPG_BattleManager") end
+function U.findBM(search)
+  local own = U.bmFromPC()
+  if not search then return own end
   local withUnits, any
   for _, b in ipairs(FindAllOf("AC_jRPG_BattleManager_C") or {}) do
     if b:IsValid() then

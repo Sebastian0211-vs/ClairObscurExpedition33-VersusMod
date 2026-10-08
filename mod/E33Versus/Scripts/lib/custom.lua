@@ -18,6 +18,32 @@ CUSTOM.meshCache = CUSTOM.meshCache or {}
 CUSTOM.texCache = CUSTOM.texCache or {}
 local function log(s) if V and V.log then V.log("CUSTOM " .. s) end end
 
+-- ---------- data files ----------
+-- Custom/ folders are shared between players: their .lua files are DATA, never code. A file is accepted only if,
+-- once its strings and comments are removed, every word in it is a known field name (no function call, loop or
+-- global), then it is loaded in text mode with an empty environment and only the returned table is kept.
+CUSTOM.DATA_WORDS = {}
+for w in ("return true false materials sections color tex bone mat v n uv t name base kind id row cost keepWeapons " ..
+  "source portrait"):gmatch("%S+") do CUSTOM.DATA_WORDS[w] = true end
+function CUSTOM.loadData(path)
+  local f = io.open(path, "rb"); if not f then return nil, "missing" end
+  local text = f:read("a"); f:close()
+  if text:find("[[", 1, true) or text:find("[=", 1, true) or text:find("\\", 1, true) then
+    return nil, "long strings and escapes are not allowed"
+  end
+  local bare = text:gsub('"[^"\n]*"', '""'):gsub("'[^'\n]*'", "''")   -- strings first (single line, no escapes)
+  bare = bare:gsub("%-%-[^\n]*", "")                                   -- then comments
+  bare = bare:gsub("%d+%.?%d*[eE][%+%-]?%d+", "0"):gsub("%d+%.?%d*", "0")   -- numbers (1e-05 too)
+  for word in bare:gmatch("[%a_][%w_]*") do
+    if not CUSTOM.DATA_WORDS[word] then return nil, "not a data file (word '" .. word .. "')" end
+  end
+  local chunk, err = load(text, "@" .. path, "t", {})
+  if not chunk then return nil, err end
+  local ok, data = pcall(chunk)
+  if not ok or type(data) ~= "table" then return nil, tostring(data) end
+  return data
+end
+
 -- ---------- definitions ----------
 local function listDirs(path)
   local out = {}
@@ -34,8 +60,10 @@ function CUSTOM.scan()
     local h = io.open(f, "r")
     if h then
       h:close()
-      local ok, d = pcall(dofile, f)
-      if ok and type(d) == "table" and d.base then
+      local d, err = CUSTOM.loadData(f)
+      local ok = d ~= nil
+      if not ok then d = err end
+      if ok and type(d.base) == "table" and (d.base.kind == "hero" or d.base.kind == "enemy") then
         d.id = id; d.name = d.name or id; d.cost = math.max(1, math.min(10, tonumber(d.cost) or 5))
         defs[id] = d
       else log("skipped " .. id .. ": " .. tostring(d)) end
@@ -99,8 +127,8 @@ end
 function CUSTOM.mesh(id)
   local m = CUSTOM.meshCache[id]
   if m then return m end
-  local ok, data = pcall(dofile, CUSTOM.DIR .. id .. "/mesh.lua")
-  assert(ok and type(data) == "table", "mesh.lua of " .. id .. ": " .. tostring(data))
+  local data, err = CUSTOM.loadData(CUSTOM.DIR .. id .. "/mesh.lua")
+  assert(data and type(data.sections) == "table" and type(data.materials) == "table", "mesh.lua of " .. id .. ": " .. tostring(err))
   -- Lua tables in the shape the UFunction wants, built once per character (spawns reuse them)
   for _, s in ipairs(data.sections) do
     local v, n, uv, t = {}, {}, {}, {}
@@ -207,6 +235,30 @@ function CUSTOM.material(actor, id, m)
   mid:SetVectorParameterValue(FName("Color"), { R = c[1], G = c[2], B = c[3], A = c[4] or 1 })
   return mid
 end
+
+-- Load everything a match's custom characters need, outside the battle spawn (called right before the trigger).
+function CUSTOM.preload(cfg)
+  local n, t0 = 0, os.clock()
+  for _, side in ipairs({ "A", "B" }) do
+    for i = 1, 3 do
+      local u = cfg[side] and cfg[side][i]
+      if u and u.custom and CUSTOM.def(u.custom) then
+        local ok, data = pcall(CUSTOM.mesh, u.custom)
+        if ok then
+          loadObj(CUSTOM.MATERIAL); loadObj(CUSTOM.FALLBACK)
+          for _, m in ipairs(data.materials) do if m.tex then CUSTOM.texture(u.custom, m.tex) end end
+          CUSTOM.portrait(u.custom)
+          n = n + 1
+        else log("preload " .. u.custom .. ": " .. tostring(data)) end
+      end
+    end
+  end
+  if n > 0 then log(("preloaded %d custom characters in %.2f s"):format(n, os.clock() - t0)) end
+end
+-- Engine objects are only valid in the level that made them: forget them on every map load (V.dropHandles) and the
+-- per-actor tables at every match start (V.resetMatch). Touching a freed UObject from Lua crashes the game.
+function CUSTOM.dropHandles() CUSTOM.texCache, CUSTOM.parts, CUSTOM.hud = {}, {}, {} end
+function CUSTOM.forgetMatch() CUSTOM.parts, CUSTOM.hud = {}, {} end
 
 -- ---------- wearing a model ----------
 CUSTOM.HIDE = { SkeletalMeshComponent = true, StaticMeshComponent = true, GroomComponent = true, PoseableMeshComponent = true,

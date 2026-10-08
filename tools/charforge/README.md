@@ -57,6 +57,11 @@ same `Custom/<id>` folder (send it to them); without it they see the base unit. 
 (first line of `mesh.lua`): when both players have the folder but different versions, the select screen says
 "Other version on your PC" and each PC shows its own.
 
+## Sharing safely
+`character.lua` and `mesh.lua` are read as **data only**: the mod refuses any file that contains something other than
+plain tables, numbers, strings and the known field names (no function call, loop or global), and loads the rest
+without access to anything. A shared `Custom/` folder cannot run code on your PC.
+
 ## Limits
 - Joints are rigid pieces: no smooth skin (that needs a real skeletal mesh, made in Unreal Editor).
 - Bones other than hips/spine/neck/head/arms/legs/fingers (jaw, tail, ears, hair, cloth) follow their parent.

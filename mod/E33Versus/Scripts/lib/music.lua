@@ -34,8 +34,8 @@ end
 -- Battle start (V.setup done): play the match's track.
 function MU.start()
   MU.stop(0)
-  local id = V.matchMusic or MU.resolve(V.cfg.music)
-  V.matchMusic = nil
+  local id = MU.restartId or V.matchMusic or MU.resolve(V.cfg.music)
+  V.matchMusic, MU.restartId = nil, nil
   if id == "area" then mlog("location music kept"); return end
   local m = MU.byId(id); if not m then mlog("no track " .. tostring(id)); return end
   local ok, err = pcall(function()
@@ -52,13 +52,25 @@ function MU.start()
     local comp = o.SpawnedComponent; assert(comp and comp:IsValid(), "no audio component")
     sys:PauseInteractiveMusicCurrentContext()
     comp:Play(0.0)
-    MU.comp, MU.paused = comp, true
+    MU.comp, MU.paused, MU.trackId = comp, true, id
   end)
   mlog(("%s: %s"):format(m.name, ok and "playing" or ("FAILED " .. tostring(err))))
 end
+-- Battle tracks are single-play MetaSounds (the game's music system loops them; we play the source directly):
+-- restart the track when it ends while the match is still on. Checked once a second from the ticker.
+function MU.frame()
+  local now = os.clock()
+  if now - (MU.checkedAt or 0) < 1 then return end
+  MU.checkedAt = now
+  if V.ended or not MU.trackId then return end
+  local comp = MU.comp
+  if not (comp and comp:IsValid()) then
+    MU.restartId = MU.trackId; mlog("audio component gone, recreating"); MU.start()   -- the game may destroy it
+  elseif not comp:IsPlaying() then comp:Play(0.0); mlog("track ended, restarted") end
+end
 -- Match end / rematch / leaving: fade our track out and give the music back to the game.
 function MU.stop(fade)
-  local comp = MU.comp; MU.comp = nil
+  local comp = MU.comp; MU.comp, MU.trackId = nil, nil
   if comp and comp:IsValid() then pcall(function() if (fade or 0) > 0 then comp:FadeOut(fade, 0.0, 0) else comp:Stop() end end) end
   if MU.paused then
     MU.paused = false

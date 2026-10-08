@@ -225,6 +225,10 @@ function ONLINE.go(g)
   V.cfg.arena, V.cfg.arenaId, V.cfg.level = g.arena or V.cfg.arena, g.arenaId, g.level
   V.matchMusic = g.music
   V.online = { me = ONLINE.mySide(), seed = g.seed, peerLoaded = false }
+  -- sync state of the previous match (turn numbers start again at 1)
+  SYNC.checked, SYNC.out, SYNC.want, SYNC.held, SYNC.wrongTurn, SYNC.skipSnapOnce, SYNC.snapBox = nil, nil, nil, nil, nil, false, nil
+  SYNC.queue, SYNC.waiting = {}, nil
+  math.randomseed(tonumber(g.seed) or 1)   -- same seed on both PCs: mod-side random choices match
   SEL.online = nil
   SEL.close()
   if V.inWorld() then

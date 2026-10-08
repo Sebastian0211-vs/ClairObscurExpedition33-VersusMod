@@ -14,8 +14,9 @@ function P.moves(u)
     if cname == "BP_jRPG_Character_Battle_Base_C" or not cname:find("^BP_") then break end
     cls:ForEachProperty(function(p)
       local ok, st = pcall(function() return p:GetStruct():GetFName():ToString() end)
-      if ok and st and st:find("RoutedEventHandle") then
-        local n = p:GetFName():ToString()
+      local n = ok and st and st:find("RoutedEventHandle") and p:GetFName():ToString()
+      -- developer skills (DebugSkillSkip...) are not moves: one became a unit's basic attack (server log 2026-10-07)
+      if n and not n:lower():find("debug", 1, true) then
         out[#out + 1] = { prop = n, label = (n:gsub("^Skill ?Hand?l?e_", ""):gsub("_", " ")) }
       end
     end)

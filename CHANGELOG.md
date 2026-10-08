@@ -14,6 +14,30 @@
   when both players have different files for the same character.
 - **Fix: the mod froze when the game window was minimized** (fights waited forever): the per-frame work now also runs
   from the world tick when the window does not draw.
+- Custom/ files are loaded as data only (shared folders cannot run code); the material and textures of a match's custom
+  characters load before the battle starts; their engine handles are dropped on every map load and match start.
+
+## 0.4.0 - 2026-10-08
+Both players need 0.4.0 for online matches (new sync messages).
+- **Online: both PCs proven identical every turn.** At each turn start the PC that decided the last action (the
+  defender for monster attacks, the attacker for hero attacks) sends the full state of every unit: HP, shield, AP,
+  stats, turn order, break bar, phase, skipped turns and statuses. The other PC checks it, corrects any difference
+  field by field, and uploads its log once per match with a `DESYNC` line naming the fields. Its own turn waits for
+  that state (3 s at most). If the two PCs disagree on who acts, the deciding PC's order wins.
+- **Online: hit-by-hit results.** Every hit's result (HP, shield, break bar, statuses) comes from the deciding PC and is
+  applied on the other one as the same hit lands, so crits and status rolls cannot differ. Covers monster attacks,
+  projectiles and hero attacks.
+- **Online: one match end.** Whichever PC ends the match first tells the other the winner; the other ends it the same
+  way (also when the game ends a match by itself).
+- **Online: same stats on both PCs** (#7). Each PC sends its own units' stat sheet; heroes and scaled monsters had
+  different HP/attack on the two PCs.
+- **Fix: crash on rematch** (level reload). The mod kept handles to objects of the destroyed level; it now drops them
+  when a level loads and finds the game's controller and managers by reference instead of searching all objects.
+- **Fix: crash while waiting for the opponent to load** (searches every frame during level streaming).
+- **Fix: counter-attacks counted as turns** after a full parry (the opponent's action landed in the wrong turn).
+- Monster attacks start when the defender's PC reports the attack began there (instead of a fixed delay); developer
+  skills are no longer offered as moves; the fight music restarts when a track ends.
+- Network helper exits as soon as the game closes (Steam no longer says the game is still running).
 
 ## 0.3.0 - 2026-10-07
 - **Versus AI**: play alone against the computer (VERSUS -> Versus AI). Build both teams, or leave team 2 empty for a

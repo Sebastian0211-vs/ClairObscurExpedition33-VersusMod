@@ -106,8 +106,10 @@ function WH.rowMoves(row)
   if not d then return nil end
   local out = {}
   for _, p in ipairs(d.props) do
-    local ph = tonumber(p:match("Phase(%d+)"))
-    out[#out + 1] = { prop = p, label = WH.pretty(p), cost = E.costFor(d.cls, p), phase = ph }
+    if not p:lower():find("debug", 1, true) then   -- developer skills are not moves
+      local ph = tonumber(p:match("Phase(%d+)"))
+      out[#out + 1] = { prop = p, label = WH.pretty(p), cost = E.costFor(d.cls, p), phase = ph }
+    end
   end
   return out
 end

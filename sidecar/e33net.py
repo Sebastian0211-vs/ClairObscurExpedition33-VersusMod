@@ -11,8 +11,8 @@ Game <-> sidecar through two append-only JSON-lines files in BRIDGE (--bridge: t
   in.jsonl         appended here for the game: every relay message, plus {"t":"net","state":...} events.
                    The game empties both files before launching the sidecar; the sidecar never truncates them.
   status.json      {"state":"offline|connecting|online","room","role","peer","ping_ms","server"}
-  alive            the game touches it every few seconds; once it is stale for 30 s the sidecar exits if the game
-                   process is gone (a save load can keep it stale for minutes), or after 15 min regardless.
+  alive            the game touches it every few seconds. The sidecar exits within ~2 s once the game process is gone
+                   (Steam counts it as part of the game), or after 15 min without "alive".
 Run: pythonw e33net.py [--bridge DIR]
 """
 import argparse, json, os, socket, subprocess, threading, time
@@ -178,12 +178,14 @@ class Net:
     GAME_EXE = "SandFall-Win64-Shipping.exe"
 
     def game_running(self, now):
-        """True while the game process exists (checked at most every 5 s). Non-Windows: assume yes."""
-        if now - getattr(self, "_game_at", 0) < 5:
+        """True while the game process exists (checked at most every 2 s). Non-Windows: assume yes."""
+        if now - getattr(self, "_game_at", 0) < 2:
             return self._game_up
         self._game_at = now
         try:
-            out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq " + self.GAME_EXE, "/NH"], capture_output=True,
+            # CSV: the table view truncates image names to 25 characters ("SandFall-Win64-Shipping.e"), which made
+            # this check fail and the sidecar quit (dropping the room) whenever it ran
+            out = subprocess.run(["tasklist", "/FO", "CSV", "/NH", "/FI", "IMAGENAME eq " + self.GAME_EXE], capture_output=True,
                                  stdin=subprocess.DEVNULL, text=True, timeout=10,
                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
             self._game_up = self.GAME_EXE.lower() in out.lower()
@@ -215,9 +217,10 @@ class Net:
                 idle = now - os.path.getmtime(alive)
             except OSError:
                 idle = now - started
-            # The game's Lua does not run while a save loads or the save list is open, so "alive" can go stale for
-            # minutes in a normal match start. Leave only when the game process is really gone (or after 15 min).
-            if idle > 30 and (idle > 900 or not self.game_running(now)):
+            # Leave as soon as the game process is gone: Steam counts this helper as part of the game, so lingering
+            # blocked relaunches ("game is running"). "alive" can be stale for minutes during a save load, so it only
+            # matters as a 15 min safety net (game process check unavailable).
+            if (now - started > 10 and not self.game_running(now)) or idle > 900:
                 self.disconnect(quiet=True); self.event("offline", error="game closed"); return
             time.sleep(0.05)
 

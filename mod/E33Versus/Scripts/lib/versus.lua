@@ -252,14 +252,19 @@ function V.start()
   V.spawnAt, V.spawnWarned = os.clock(), nil
   log("party healed: " .. tostring(cm and cm:IsValid() and pcall(function() cm:FullHealAllCharacters() end)))
   V.spawnPending = true
+  -- custom characters: parse their meshes, load the material and import the textures NOW, before the battle starts
+  -- streaming (setup then only builds components)
+  if CUSTOM then pcall(CUSTOM.preload, V.cfg) end
   V.trigger()
 end
 -- Forget the previous match: a rematch in the same world otherwise ran the end check on the old (destroyed) units
 -- at the placeholder battle's first turn -> forced CheckBattleEnd -> instant defeat -> crash (11:19 test).
 function V.resetMatch()
-  V.units, V.sideOf, V.uidOf, V.rowOf = {}, {}, {}, {}
+  V.units, V.sideOf, V.uidOf, V.rowOf, V.customOf = {}, {}, {}, {}, {}
+  if CUSTOM then CUSTOM.forgetMatch() end
   V.ended, V.turnSeen, V.lastSig, V.endWatch, V.heroSide, V.frameErr = nil, nil, nil, nil, nil, nil
   V.lastSnap, V.lastActor, V.lastSide, V.queuedDeathUnits = nil, nil, nil, nil
+  V.counterUnits = {}
   if PH then PH.dead, PH.armed = {}, {} end
 end
 -- Setup order (never leave a side empty, or the game's CheckBattleEnd fires):
@@ -396,28 +401,71 @@ function V.setup()
   for _, ph in ipairs(phEnemies) do if ph then pcall(U.kick, ph) end end
   log(("setup done: players=%d enemies=%d, strays removed: %d"):format(#bm.PlayerCharacters, #bm.Enemies, V.cleanupStrays()))
   if MU then pcall(MU.start) end
+  if SYNC and SYNC.active() then pcall(SYNC.sendStats); pcall(SYNC.applyStats) end   -- same stats on both PCs
+  pcall(V.preloadStart)
   local okH, errH = pcall(V.rebuildHUD); if not okH then log("HUD rebuild: " .. tostring(errH)) end
   bm.FleeImpossible = true   -- no "Fuir" in versus
+end
+
+-- Attack sequences of every unit (lib/preload_data.lua, from the game's file list), loaded a few per frame right after
+-- setup: an enemy move loads its sequence on first use, which started that move late on one PC (late parry outcomes
+-- in the server logs). Loaded objects may be collected again later; the disk cache stays warm.
+V.PRELOAD_PER_FRAME = 2
+function V.preloadStart()
+  local q, seen = {}, {}
+  for _, u in ipairs(V.units or {}) do
+    local row = V.rowOf and V.rowOf[u:GetAddress()]
+    row = row and tostring(row):gsub("#.*$", "")
+    -- once per game session per sequence: loading one again after a level reload (it may be half unloaded) crashed
+    -- inside the engine (rematch 2026-10-08 11:33); one already in memory is skipped too
+    for _, p in ipairs((PRELOAD_DATA or {})[row or ""] or {}) do
+      if not seen[p] and not (E33V_PRELOADED and E33V_PRELOADED[p]) then
+        seen[p] = true
+        local ok, o = pcall(StaticFindObject, p)
+        if not (ok and o and o:IsValid()) then q[#q + 1] = p end
+      end
+    end
+  end
+  V.preloadQ, V.preloadN, V.preloadAt = q, 0, os.clock()
+  if #q > 0 then log(("preload: %d sequences"):format(#q)) end
+end
+function V.preloadFrame()
+  local q = V.preloadQ; if not q then return end
+  for _ = 1, V.PRELOAD_PER_FRAME do
+    local p = table.remove(q, 1); if not p then break end
+    E33V_PRELOADED = E33V_PRELOADED or {}; E33V_PRELOADED[p] = true
+    local ok, obj = pcall(LoadAsset, p)
+    if ok and obj then V.preloadN = V.preloadN + 1 end
+  end
+  if #q == 0 then log(("preload done: %d loaded in %.2f s"):format(V.preloadN, os.clock() - V.preloadAt)); V.preloadQ = nil end
 end
 
 -- Counter watchdog: a full parry makes the defender counter. Enemy-class defenders have no counter attack, so the
 -- battle would wait forever (HasActiveCounterAttack). Moves reset CanBeCountered themselves, so we end it instead.
 V.COUNTER_GRACE = 0.6
+-- Units seen countering (address -> clock). The counter's OnTurnStart can come AFTER we ended a monster's counter
+-- (flag already cleared): V.isCounterTurn still recognises it for V.COUNTER_WINDOW seconds, once. Monsters only.
+V.counterUnits = V.counterUnits or {}
+V.COUNTER_WINDOW = 6.0   -- measured 1-3 s between our skip and the counter's turn start
 function V.counterWatch()
   local bm = U.bm()
   if not (bm and bm:IsValid() and bm.HasActiveCounterAttack) then V.counterSince = nil; return end
-  local stuck = false
+  local stuck = {}
   for i = 1, #bm.CurrentlyCounteringCharacters do
     local st = bm.CurrentlyCounteringCharacters[i]
     local ok, owner = pcall(function() return st:GetOwner() end)
-    if ok and owner and owner:IsValid() and P.isEnemyClass(owner) then stuck = true end
+    if ok and owner and owner:IsValid() and P.isEnemyClass(owner) then stuck[#stuck + 1] = owner:GetAddress() end
   end
+  if #stuck == 0 then stuck = nil end
   if not stuck then V.counterSince = nil; return end
   local now = os.clock()
   V.counterSince = V.counterSince or now
   if now - V.counterSince >= V.COUNTER_GRACE then
     V.counterSince = nil
     log("counter skipped (enemy-class defender has no counter)")
+    -- only these: their counter's turn start comes later (V.isCounterTurn). A HERO counters during the attacker's
+    -- action, so its next turn start is a real turn (skipping it froze match 2026-10-08 11:53).
+    for _, a in ipairs(stuck) do V.counterUnits[a] = os.clock() end
     bm:OnCounterAttackFinished()
   end
 end
@@ -505,6 +553,12 @@ function V.checkSides(forceEnd, dyingAddr)
   if MU then pcall(MU.stop, 2.0) end
   if AI then pcall(AI.unblock) end
   if V.online and ONLINE then pcall(ONLINE.uploadLog, "match-end") end   -- server owner gets both players' logs
+  -- the owner of the last action tells the other PC the final state (its deaths end the match there too), and
+  -- whichever PC gets here first tells the other the winner (SYNC.onEnd ends it the same way there)
+  if SYNC and V.online and V.online.inMatch and (V.online.truthSide or "A") == V.online.me then
+    pcall(SYNC.sendSnap, V.online.turnN, nil, true)
+  end
+  if SYNC and SYNC.sendEnd then pcall(SYNC.sendEnd, alive.A > 0 and "A" or "B", "sides") end
   -- Final labels from THIS screen's point of view, LIVING units only: the game's CheckBattleEnd says DEFEAT when
   -- PlayerCharacters is empty and VICTORY when Enemies is empty. My side = the "heroes" (local: team 1; online: own side).
   local mySide = (V.online and V.online.me) or "A"
@@ -529,7 +583,17 @@ function V.checkSides(forceEnd, dyingAddr)
   return true
 end
 -- research: which end flow the game really runs after our end check
-function V.cbEndFlow(name) log("END FLOW " .. name .. " state=" .. tostring(U.bm() and U.bm().BattleEndState)) end
+function V.cbEndFlow(name)
+  log("END FLOW " .. name .. " state=" .. tostring(U.bm() and U.bm().BattleEndState))
+  -- The game ended the match by itself (not through V.checkSides: server log 2026-10-07, one PC only). Online: tell the
+  -- other PC the result this screen shows, so both end the same way.
+  if V.online and V.online.inMatch and not V.ended and SYNC and SYNC.sendEnd then
+    local me = V.online.me
+    local other = me == "A" and "B" or "A"
+    if name:find("^OnAllHeroesKilled") then V.ended = true; pcall(SYNC.sendEnd, other, "game: all heroes killed")
+    elseif name:find("^OnAllEnemiesKilledInternal") then V.ended = true; pcall(SYNC.sendEnd, me, "game: all enemies killed") end
+  end
+end
 function V.hookEndFlows()
   if E33V_ENDHOOKS then return end
   E33V_ENDHOOKS = true
@@ -557,9 +621,17 @@ end
 -- ---------- main-menu entry ----------
 -- F6 on the title screen: list save slots (through the game's own load screen), load the chosen one,
 -- then open the versus setup once the world is ready. Autosave is turned off as soon as the world exists.
+-- The world controller, cached per world: readyCheck asks every frame while waiting for the opponent, and a per-frame
+-- FindFirstOf while a reloaded level streams in crashed the game (rematch 2026-10-08 11:28). Searched at most 1x/s.
 function V.inWorld()
   if V.loading then return false end
-  local c = FindFirstOf("BP_jRPG_Controller_World_C"); return c ~= nil and c:IsValid()
+  local c = V.worldPC
+  if c and c:IsValid() then return true end
+  if os.clock() - (V.worldPCAt or 0) < 1 then return false end
+  V.worldPCAt = os.clock()
+  c = FindFirstOf("BP_jRPG_Controller_World_C")
+  V.worldPC = (c and c:IsValid()) and c or nil
+  return V.worldPC ~= nil
 end
 -- Title VERSUS button (Sparking Zero flow): character select first, then the save to fight in, then the fight.
 function V.menuTitle()
@@ -594,7 +666,7 @@ end
 -- ---------- arenas (locations) ----------
 function V.arenaById(id) for _, a in ipairs(ARENAS or {}) do if a.id == id then return a end end end
 function V.currentLevel()
-  local w = FindFirstOf("BP_jRPG_Controller_World_C")
+  local w = V.inWorld() and V.worldPC or nil
   local n = w and w:IsValid() and w:GetFullName():match("/([^/%.]+)%.[^/]*:PersistentLevel") or nil
   return n or "?"
 end
@@ -648,11 +720,14 @@ function V.travelIfNeeded()
 end
 -- A raw level open skips the game's fade-in: lift the camera fade so exploration is not left black.
 function V.clearFade()
-  local pc = FindFirstOf("PlayerController")
+  local pc = (TICK and TICK.pc and TICK.pc:IsValid()) and TICK.pc or FindFirstOf("PlayerController")
   if pc and pc:IsValid() and pc.PlayerCameraManager then pc.PlayerCameraManager:StopCameraFade() end
 end
 function V.readyCheck()
   if not (V.openWhenReady or V.fightWhenReady) or not V.inWorld() then return end
+  -- waiting for the opponent's "loaded": nothing to do (the steps below search objects; per frame while a level
+  -- streams in, that crashed the game: rematch 2026-10-08 11:28)
+  if V.fightWhenReady and V.online and V.online.sentLoaded and not V.online.peerLoaded then return end
   if not V.worldSeen then V.worldSeen = os.clock(); V.noAutoSave(); return end
   if os.clock() - V.worldSeen < 3 then return end
   V.worldSeen = nil
@@ -733,6 +808,16 @@ function V.damageLog(next)
   V.lastSnap, V.lastActor, V.lastSide = snap, V.short(next), V.sideOf and V.sideOf[next:GetAddress()]
 end
 function V.short(u) local ok, n = pcall(function() return u:GetFName():ToString():gsub("^BP_", ""):gsub("_C_%d+$", "") end); return ok and n or "?" end
+function V.isCounterTurn(c, bm)
+  local addr = c:GetAddress()
+  local seen = V.counterUnits and V.counterUnits[addr]
+  if seen then
+    V.counterUnits[addr] = nil
+    log(("counter check: %s countered %.1f s ago"):format(c:GetFName():ToString(), os.clock() - seen))
+  end
+  local okC, active = pcall(function() return bm.HasActiveCounterAttack == true end)
+  return (okC and active) or (seen ~= nil and os.clock() - seen < V.COUNTER_WINDOW)
+end
 function V.onTurnStart(ctx)
   local c = ctx:get(); local addr = c:GetAddress(); local bm = U.bm()
   if V.spawnPending then return end   -- placeholder battle, our teams are not set up yet
@@ -747,6 +832,11 @@ function V.onTurnStart(ctx)
   for _, u in ipairs(V.units or {}) do if u:IsValid() then pcall(PH.afterTransition, u) end end
   local okP, skipped = pcall(PH.onTurn, c)
   if okP and skipped then log("turn: " .. c:GetFName():ToString() .. " is dead (phase death) -> skipped"); return end
+  -- A counter-attack (after a full parry) fires OnTurnStart for the defender but is NOT a turn: no turn number, no
+  -- turn message to the opponent, no wheel / AI (monsters cannot counter: V.counterWatch ends it; heroes counter
+  -- automatically on both PCs, the parries that trigger it are mirrored). Online it was taken for a real turn: the
+  -- opponent acted during the next unit's turn (local test 2026-10-08).
+  if V.isCounterTurn(c, bm) then log("turn: " .. c:GetFName():ToString() .. " counter-attack (not a turn)"); return end
   if SYNC and SYNC.active() then
     if E33V_CONTROLLED[addr] then E.onTurn(c) end
     local okS, remote = pcall(SYNC.onTurn, c)
@@ -754,7 +844,10 @@ function V.onTurnStart(ctx)
     if okS and remote then log("turn: " .. c:GetFName():ToString() .. " -> opponent"); return end
     if E33V_CONTROLLED[addr] then
       c["ControlledByBattleAI?"] = false
-      local ok, err = pcall(WH.beginTurn, c); if not ok then log("WHEEL ERROR " .. tostring(err)) end
+      local begin = function() local ok, err = pcall(WH.beginTurn, c); if not ok then log("WHEEL ERROR " .. tostring(err)) end end
+      if SYNC.mustWait() then SYNC.holdTurn(begin, false) else begin() end
+    elseif SYNC.mustWait() then
+      SYNC.holdTurn(nil, true)   -- my hero: hands off the wheel until the opponent's state is applied
     end
     return
   end
@@ -813,25 +906,49 @@ end
 function V.spawnCheck()
   if not V.spawnPending then return end
   local bm = U.bm()
-  -- the cached manager can be the previous battle's: re-pick the live one until the placeholder battle shows up
-  -- (throttled: FindAllOf while the battle's assets stream in is a known crash source)
-  if bm and bm:IsValid() and (#bm.PlayerCharacters + #bm.Enemies == 0 or bm.BattleEndState ~= 0)
-    and os.clock() - (V.bmRepickAt or 0) > 0.5 then V.bmRepickAt = os.clock(); U.bmReset(); bm = U.bm() end
+  -- the cached manager can be the previous battle's: follow the world controller's own one (a property read).
+  -- No FindAllOf here: searching objects while the battle's assets stream in crashed the game (rematch 2026-10-08).
+  if not (bm and bm:IsValid() and #bm.PlayerCharacters + #bm.Enemies > 0 and bm.BattleEndState == 0) then
+    local own = U.bmFromPC()
+    if own and (not bm or own:GetAddress() ~= bm:GetAddress()) then U._bm = own; bm = own end
+  end
   local ready = bm and bm:IsValid() and bm.BattleEndState == 0 and bm.HasSpawnedHeroes and bm.HasSpawnedEnemies and #bm.PlayerCharacters > 0 and #bm.Enemies > 0
   if ready then
     V.spawnPending = false
     local ok, err = pcall(V.setup); if not ok then log("SETUP ERROR " .. tostring(err)) end
   elseif V.spawnAt and os.clock() - V.spawnAt > 6 and not V.spawnWarned then
+    -- last resort, once, when the battle has been up for a while (assets loaded): search every battle manager
     V.spawnWarned = true
-    log(("setup still waiting after 6 s: P=%s E=%s"):format(tostring(bm and #bm.PlayerCharacters), tostring(bm and #bm.Enemies)))
+    log(("setup still waiting after 6 s: P=%s E=%s -> searching battle managers"):format(tostring(bm and #bm.PlayerCharacters), tostring(bm and #bm.Enemies)))
+    local found = U.findBM(true); if found then U._bm = found end
   end
 end
 -- Level loads: stop all per-frame work and object searches from the map-load start until 3 s after the new
 -- world's game state exists (searching objects mid-load is a known UE crash).
-function V.onLoadStart() V.loading = true; U._bm = nil; V.worldAt = nil end
+-- A level change destroys every actor, widget and component of the old world. Lua handles to them stay around, and
+-- touching one later (even :IsValid() / IsInViewport on freed memory) crashed inside UE4SS's class walk
+-- (UE4SS+0x2f6cee, always entered from the same engine frame: rematches 2026-10-08 10:37, 11:19, 11:28, 11:38,
+-- 11:45). Drop them all when a load starts; everything is looked up again in the new world.
+function V.dropHandles()
+  U._bm, V.worldPC = nil, nil
+  V.units, V.sideOf, V.uidOf, V.rowOf, V.customOf, V.lastSnap = {}, {}, {}, {}, {}, nil
+  if CUSTOM then CUSTOM.dropHandles() end   -- imported textures, mesh components and HUD widgets of the old level
+  if TICK then TICK.pc, TICK.w = nil, nil end
+  if GP then GP.titlePC = nil end
+  if SYNC then
+    SYNC.lastUnit, SYNC.waiting, SYNC.held, SYNC.pendingHero, SYNC.turnSnap, SYNC.hero = nil, nil, nil, nil, nil, nil
+    SYNC.queue = {}
+  end
+  if DEF then DEF.act, DEF.watch = nil, nil end
+  if WH then WH.cur, WH._bmAddr, WH._tm, WH._wc = nil, nil, nil, nil end
+  if MU then MU.comp, MU.trackId = nil, nil end
+  if TB then TB.button = nil end
+end
+function V.onLoadStart() V.loading = true; V.worldAt = nil; V.searchWatchUntil = os.clock() + 40; V.dropHandles() end
 function V.onWorldInit()
-  V.loading = true; U._bm = nil; V.matchesHere = 0
-  V.loadDoneAt = os.clock() + 3      -- cleared by V.loadCheck() from the per-frame hooks (no timers: they run off-thread)
+  V.loading = true; V.matchesHere = 0; V.searchWatchUntil = os.clock() + 40
+  V.dropHandles()
+  V.loadDoneAt = os.clock() + 5      -- cleared by V.loadCheck() from the per-frame hooks (no timers: they run off-thread)
 end
 function V.loadCheck()
   if V.loading and V.loadDoneAt and os.clock() >= V.loadDoneAt then V.loading, V.loadDoneAt = false, nil end
