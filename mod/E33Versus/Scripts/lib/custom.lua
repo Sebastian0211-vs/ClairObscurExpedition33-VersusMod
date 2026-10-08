@@ -167,7 +167,9 @@ end
 local function loadObj(path)
   local name = path:match("([^/]+)$")
   local o = StaticFindObject(path .. "." .. name)
-  if not (o and o:IsValid()) then pcall(LoadAsset, path); o = StaticFindObject(path .. "." .. name) end
+  -- LoadAsset needs the object path (<package>.<name>): with the package path alone it returns but nothing can be
+  -- found afterwards, so the asset was only there on levels that had already loaded it (not Gestral Beach)
+  if not (o and o:IsValid()) then pcall(LoadAsset, path .. "." .. name); o = StaticFindObject(path .. "." .. name) end
   return (o and o:IsValid()) and o or nil
 end
 -- An imported texture belongs to nobody: the next garbage collection (level streaming at battle start, the periodic
@@ -194,6 +196,7 @@ local function hold(t)
   local parent = loadObj(CUSTOM.MATERIAL)
   if not (k and parent) then return nil end
   local mid = StaticFindObject("/Script/Engine.Default__KismetMaterialLibrary"):CreateDynamicMaterialInstance(k.pc, parent, FName("E33V_KEEP"), 0)
+  if not (mid and mid:IsValid()) then return nil end
   mid:SetTextureParameterValue(FName(CUSTOM.TEX_PARAM), t)
   k.comp:SetMaterial(k.n, mid); k.n = k.n + 1
   return mid

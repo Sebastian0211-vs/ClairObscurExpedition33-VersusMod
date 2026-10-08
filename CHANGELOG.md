@@ -5,6 +5,8 @@
   the battle but held by nothing in the engine: a garbage collection during the battle start freed them and the game
   could crash on the first hit or the first frames (seen with a Chroma Lune base). Imported textures are now held by
   the engine for as long as the mod uses them.
+- **Fix: custom characters drawn without their texture on some maps** (e.g. Gestral Beach). The character material
+  was only found on levels that had already loaded it; it is now loaded by its full object path.
 - **Fix: CharForge failed on bases without legs** (#14), e.g. `--base enemy:SI_Axon_Sirene` stopped with "Blender
   exit code 1". Floating units now get their hips and facing from the bone names; the model's legs ride the hips.
   CharForge also prints the reason when a conversion fails.
