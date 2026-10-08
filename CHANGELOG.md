@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-10-08
+Both players should use 0.5.0 for online matches (custom characters are sent with the team).
+Known issue: #7 (fight out of sync between the two PCs) is still under investigation.
 - **Fix: crash with a custom character in the fight** (#14). The textures of a custom character were imported before
   the battle but held by nothing in the engine: a garbage collection during the battle start freed them and the game
   could crash on the first hit or the first frames (seen with a Chroma Lune base). Imported textures are now held by
