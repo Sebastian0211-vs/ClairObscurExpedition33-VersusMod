@@ -424,8 +424,10 @@ function V.preloadFrame()
 end
 
 -- Counter watchdog: a full parry makes the defender counter. Enemy-class defenders have no counter attack, so the
--- battle would wait forever (HasActiveCounterAttack). Moves reset CanBeCountered themselves, so we end it instead.
-V.COUNTER_GRACE = 0.6
+-- battle would wait forever (HasActiveCounterAttack). Moves reset CanBeCountered themselves (in the same call as the
+-- parry check: clearing it per frame or in hooks did not stop it, tested 2026-10-08), so we end it instead, on the first
+-- frame: during the old 0.6 s grace the game played its counter camera and prompt on a unit that has no counter (#11).
+V.COUNTER_GRACE = 0
 -- Units seen countering (address -> clock). The counter's OnTurnStart can come AFTER we ended a monster's counter
 -- (flag already cleared): V.isCounterTurn still recognises it for V.COUNTER_WINDOW seconds, once. Monsters only.
 V.counterUnits = V.counterUnits or {}

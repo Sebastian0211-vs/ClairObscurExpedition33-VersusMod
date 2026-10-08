@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+- **Fix: monster skill wheel ignored input the first time** (#6). Opening Skills right after the action page left the
+  game in target selection: no move could be picked and RT / R did not switch pages until Back + reopen.
+- **Fix: counter camera on monster defenders** (#11). A full parry by a monster started a counter it can't perform; the
+  game played its counter camera and prompt for over half a second. It is now ended on the first frame.
+- **Fix: charmed monsters froze the battle.** A charmed monster now attacks one of its allies with its basic move; a
+  charmed monster with no ally left loses the match for its side (as in the base game).
+- Big units: the turn camera moves further to the side so a wide unit no longer hides its targets (#8, first part).
+
 ## 0.4.0 - 2026-10-08
 Both players need 0.4.0 for online matches (new sync messages).
 - **Online: both PCs proven identical every turn.** At each turn start the PC that decided the last action (the
