@@ -11,6 +11,7 @@ function ONLINE.packTeam(side)
     if u then
       local w = u.kind == "hero" and { kind = "hero", id = u.id } or { kind = "enemy", row = u.row, loadout = u.loadout }
       w.custom = u.custom   -- the other PC needs the same Custom/<id> folder; without it the base unit is shown
+      if u.custom and CUSTOM then w.customHash = CUSTOM.hash(u.custom) end
       out[#out + 1] = w
     end
   end
@@ -20,7 +21,18 @@ function ONLINE.unpackTeam(list)
   local out = {}
   for _, w in ipairs(list or {}) do
     local cu = w.custom and CUSTOM and CUSTOM.unit(w.custom)
-    if cu then cu.loadout = w.loadout; out[#out + 1] = cu
+    if w.custom and not cu then
+      V.log("online: opponent uses custom " .. tostring(w.custom) .. ", not in Custom/ here: showing its base unit")
+    end
+    if cu then
+      cu.loadout = w.loadout
+      -- same id, other files (another model, or rebuilt): this PC shows its own version
+      local mine = CUSTOM.hash(w.custom)
+      if w.customHash and mine and w.customHash ~= mine then
+        cu.versionMismatch = true
+        V.log(("online: custom %s differs from the opponent's (%s here, %s there): showing this PC's version"):format(w.custom, mine, w.customHash))
+      end
+      out[#out + 1] = cu
     elseif w.kind == "hero" then
       for _, h in ipairs(V.HEROES) do if h.id == w.id then out[#out + 1] = { kind = "hero", id = h.id, name = h.name or h.label, label = h.label } end end
     elseif w.row and ROSTER[w.row] then

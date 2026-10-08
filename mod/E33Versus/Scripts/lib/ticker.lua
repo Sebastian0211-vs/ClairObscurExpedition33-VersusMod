@@ -30,6 +30,7 @@ end
 function TICK.frame()
   if V and V.loadCheck and V.loadCheck() then return end
   local now = os.clock()
+  TICK.lastFrame = now
   local pc = TICK.pc
   if not (pc and pc:IsValid()) then pc = FindFirstOf("PlayerController"); TICK.pc = pc end
   if KB and KB.drain then pcall(KB.drain) end                  -- keyboard (queued by the key binds)
@@ -63,4 +64,11 @@ function TICK.dev()
     if fn then ok, r = pcall(fn) end
     local out = io.open(B .. "title.out", "w"); if out then out:write(os.date("%H:%M:%S") .. " " .. tostring(ok) .. " " .. tostring(r) .. "\n"); out:close() end
   end
+end
+
+-- A minimized game window stops Slate, so the ticking widget stops too (fights froze waiting for the AI, the network
+-- and the dev bridge). The world controller's Blueprint tick keeps running (also in battle): V.tick calls this, which
+-- runs a frame only when the widget has been silent for a while.
+function TICK.fallback()
+  if TICK.w and os.clock() - (TICK.lastFrame or 0) > 0.25 then TICK.frame() end
 end

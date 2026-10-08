@@ -28,6 +28,7 @@ CID = A.get("id") or re.sub(r"[^A-Za-z0-9_]", "_", os.path.splitext(os.path.base
 NAME = A.get("name") or CID
 MAXTEX = int(A.get("maxtex") or 1024)
 SCALE_MUL = float(A.get("scale") or 1.0)
+STRETCH = A.get("stretch", "1") != "0"   # stretch each limb piece to the game bone's length (joints meet)
 BONEMAP = json.loads(open(A["bonemap"], encoding="utf-8").read()) if A.get("bonemap") else {}
 REPORT = {"model": os.path.basename(MODEL), "warnings": []}
 def warn(s): print("[charforge] WARNING " + s); REPORT["warnings"].append(s)
@@ -256,6 +257,18 @@ def read_body(s, label):
     legs = {}
     for ch in leg_chain:
         legs["l" if lat(ch[-1]) > 0 else "r"] = ch
+    # fingers: chains under each hand, told apart by name (thumb/index/middle/ring/pinky); helper leaves dropped
+    FINGER = (("thumb", r"thumb"), ("index", r"index|pointer"), ("middle", r"middle"), ("ring", r"ring"), ("pinky", r"pinky|little"))
+    HELP = re.compile(r"half|bulge|side|dip|pip|mcp|palm|slide|twist|_in_|_in$|corrective|end$|_end", re.I)
+    fingers = {}
+    for side in ("l", "r"):
+        ch = arms.get(side, {}).get("chain") or []
+        if not ch: continue
+        for c in kids(ch[-1]):
+            fc = [n for n in main_chain(c) if not HELP.search(n)]
+            for kind, rx in FINGER:
+                if fc and re.search(rx, fc[-1].lower()):
+                    fingers[side + "_" + kind] = fc; break
     # spine = path hips -> arms branch (chest); neck/head = chest -> head tip
     chest = None
     for side in ("l", "r"):
@@ -266,7 +279,7 @@ def read_body(s, label):
     ci = spine_path.index(chest)
     body = {"hips": hips, "spine": spine_path[:ci + 1], "neck": spine_path[ci + 1:], "arm_l": arms.get("l", {}).get("chain", []),
             "arm_r": arms.get("r", {}).get("chain", []), "leg_l": legs.get("l", []), "leg_r": legs.get("r", []),
-            "up": up, "fwd": fwd, "left": left, "height": height, "zmin": zmin}
+            "up": up, "fwd": fwd, "left": left, "height": height, "zmin": zmin, "fingers": fingers}
     info("%s: hips=%s spine=%s neck=%s armL=%s armR=%s legL=%s legR=%s" % (label, hips, body["spine"], body["neck"], body["arm_l"], body["arm_r"], body["leg_l"], body["leg_r"]))
     return body
 
@@ -308,6 +321,13 @@ if cbody:
     for side in ("l", "r"):
         mapping.update(map_chain(cbody["arm_" + side], gbody["arm_" + side], "end"))
         mapping.update(map_chain(cbody["leg_" + side], gbody["leg_" + side], "start"))
+    for key, cf in cbody["fingers"].items():
+        gf = gbody["fingers"].get(key)
+        if not gf: continue
+        if not any("metacarpal" in n.lower() for n in cf): gf = [n for n in gf if "metacarpal" not in n.lower()]
+        mapping.update(map_chain(cf, gf, "start"))
+    nf = sum(1 for k3 in cbody["fingers"] if k3 in gbody["fingers"])
+    if nf: info("fingers matched: %d" % nf)
     mapping.update({k2: v2 for k2, v2 in BONEMAP.items() if v2 in GAME.b})
     REPORT["bonemap"] = mapping
     info("bone map: %d model bones -> game bones" % len(mapping))
@@ -317,8 +337,8 @@ else:
     zmin = min(v.z for v in allv); zmax = max(v.z for v in allv)
     cx = sum(v.x for v in allv) / len(allv); cy = sum(v.y for v in allv) / len(allv)
     k = gbody["height"] / max(1e-6, zmax - zmin) * SCALE_MUL
-    R = basis(gbody) @ Matrix(((0, -1, 0), (1, 0, 0), (0, 0, 1))).transposed().transposed()  # glTF/Blender front -Y
-    R = basis(gbody) @ Matrix((Vector((0, -1, 0)), Vector((1, 0, 0)), Vector((0, 0, 1)))).transposed().transposed()
+    # Blender/glTF convention: the model faces -Y, its left is +X
+    R = basis(gbody) @ basis({"fwd": Vector((0, -1, 0)), "left": Vector((1, 0, 0)), "up": Vector((0, 0, 1))}).transposed()
     def fit(v):
         w = R @ (Vector((v.x - cx, v.y - cy, v.z - zmin)) * k)
         return Vector((w.x + GH.x, w.y + GH.y, w.z + gbody["zmin"]))
@@ -333,6 +353,8 @@ def chain_next(body, s, n):
             if i + 1 < len(ch): return ch[i + 1]
             if key == "spine" and body["neck"]: return body["neck"][0]
     if n == body["hips"] and body["spine"]: return body["spine"][0]
+    for ch in body["fingers"].values():
+        if n in ch and ch.index(n) + 1 < len(ch): return ch[ch.index(n) + 1]
     return None
 
 seg_xf = {}   # custom bone -> (game bone, function world_model_vertex -> game-RH component vertex)
@@ -340,19 +362,25 @@ if cbody:
     for c, g in mapping.items():
         ch = fit(CUST.b[c]["head"])
         gh = GAME.b[g]["head"]
-        rot = Quaternion()
-        cn, gn = chain_next(cbody, CUST, c), chain_next(gbody, GAME, g)
+        rot = Quaternion(); axis, stretch = None, 1.0
+        cn = chain_next(cbody, CUST, c)
+        gn = mapping.get(cn) if cn else None   # where the model's next joint lands (chains can skip game bones)
+        if gn == g: gn = None
+        if cn and not gn: gn = chain_next(gbody, GAME, g)
         if cn and gn:
             dc = fit(CUST.b[cn]["head"]) - ch; dg = GAME.b[gn]["head"] - gh
-            if dc.length > 1e-6 and dg.length > 1e-6: rot = dc.normalized().rotation_difference(dg.normalized())
-        seg_xf[c] = (g, ch, gh, rot)
+            if dc.length > 1e-6 and dg.length > 1e-6:
+                rot = dc.normalized().rotation_difference(dg.normalized())
+                if STRETCH:
+                    axis, stretch = dc.normalized(), max(0.7, min(1.4, dg.length / dc.length))
+        seg_xf[c] = (g, ch, gh, rot, axis, stretch)
     # end bones (hands, head, feet ends) inherit their parent's rotation
     for c in list(seg_xf):
-        g, ch, gh, rot = seg_xf[c]
+        g, ch, gh, rot = seg_xf[c][:4]
         if chain_next(cbody, CUST, c) is None:
             p = CUST.b[c]["parent"]
             while p and p not in seg_xf: p = CUST.b[p]["parent"]
-            if p: seg_xf[c] = (g, ch, gh, seg_xf[p][3])
+            if p: seg_xf[c] = (g, ch, gh, seg_xf[p][3], None, 1.0)
 
 def resolve(bone):
     """custom bone -> mapped custom bone (itself or nearest mapped ancestor)"""
@@ -470,9 +498,9 @@ for o in meshes:
             bs = [vbone[me.loops[li].vertex_index] if vbone else None for li in tri.loops]
             bs = [b or fallback for b in bs]
             c = max(set(bs), key=bs.count)
-            g, ch, gh, rot = seg_xf.get(c, (gbody["hips"], Vector(), GAME.b[gbody["hips"]]["head"], Quaternion()))
+            g, ch, gh, rot, axis, stretch = seg_xf.get(c, (gbody["hips"], Vector(), GAME.b[gbody["hips"]]["head"], Quaternion(), None, 1.0))
         else:
-            g, ch, gh, rot = gbody["hips"], None, None, None
+            g, ch, gh, rot, axis, stretch = gbody["hips"], None, None, None, None, 1.0
         mat = o.material_slots[tri.material_index].material if tri.material_index < len(o.material_slots) else None
         sec = section(g, material_slot(mat))
         gb = GAME.b[g]; ginv = gb["rot"].inverted()
@@ -483,7 +511,11 @@ for o in meshes:
             nrm = (nmw @ (split[li] if split else me.vertices[vi].normal))
             nrm = (R @ nrm)
             if rot is not None:
-                p = gh + rot @ (p - ch); nrm = rot @ nrm
+                q = p - ch
+                if axis is not None and stretch != 1.0:
+                    t = q.dot(axis)
+                    if t > 0: q = q + axis * (t * (stretch - 1.0))   # only past the joint: the piece reaches the next joint
+                p = gh + rot @ q; nrm = rot @ nrm
             lp = ginv @ (p - gb["head"]); ln = (ginv @ nrm).normalized()
             uv = (uvl[li].uv.x, 1.0 - uvl[li].uv.y) if uvl else (0.0, 0.0)
             key = (vi, round(uv[0], 4), round(uv[1], 4), round(ln.x, 2), round(ln.y, 2), round(ln.z, 2))
@@ -506,16 +538,26 @@ def nums(xs, nd):
     fmt = "%." + str(nd) + "f"
     return ",".join((fmt % x).rstrip("0").rstrip(".") if isinstance(x, float) else str(x) for x in xs)
 
+import hashlib, io
+buf = io.StringIO()
+buf.write("return {\n  materials = {\n")
+for m in materials:
+    buf.write("    { color = { %s }%s },\n" % (nums(m["color"], 4), (', tex = "%s"' % m["tex"]) if m.get("tex") else ""))
+buf.write("  },\n  sections = {\n")
+for s in sections.values():
+    buf.write('    { bone = "%s", mat = %d,\n      v = { %s },\n      n = { %s },\n      uv = { %s },\n      t = { %s } },\n'
+              % (s["bone"], s["mat"], nums(s["v"], 2), nums(s["n"], 3), nums(s["uv"], 4), nums(s["t"], 0)))
+buf.write("  },\n}\n")
+body = buf.getvalue()
+# version stamp of the look (geometry + textures): the two PCs of an online match compare it
+h = hashlib.sha1(body.encode("utf-8"))
+for m in materials:
+    if m.get("tex"):
+        with open(os.path.join(OUTDIR, m["tex"]), "rb") as tf: h.update(tf.read())
 with open(os.path.join(OUTDIR, "mesh.lua"), "w", encoding="utf-8") as f:
+    f.write("-- charforge-hash: %s\n" % h.hexdigest()[:12])
     f.write("-- generated by tools/charforge from %s - mesh sections in game-bone space (cm)\n" % os.path.basename(MODEL))
-    f.write("return {\n  materials = {\n")
-    for m in materials:
-        f.write("    { color = { %s }%s },\n" % (nums(m["color"], 4), (', tex = "%s"' % m["tex"]) if m.get("tex") else ""))
-    f.write("  },\n  sections = {\n")
-    for s in sections.values():
-        f.write('    { bone = "%s", mat = %d,\n      v = { %s },\n      n = { %s },\n      uv = { %s },\n      t = { %s } },\n'
-                % (s["bone"], s["mat"], nums(s["v"], 2), nums(s["n"], 3), nums(s["uv"], 4), nums(s["t"], 0)))
-    f.write("  },\n}\n")
+    f.write(body)
 REPORT.update({"triangles": total_tris, "sections": len(sections), "materials": len(materials)})
 with open(os.path.join(OUTDIR, "forge_report.json"), "w", encoding="utf-8") as f: json.dump(REPORT, f, indent=1)
 info("wrote " + OUTDIR)

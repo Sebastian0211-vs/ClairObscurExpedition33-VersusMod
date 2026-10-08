@@ -8,6 +8,12 @@
   bone), unrigged models ride the hips. Textures and colours kept, a portrait is rendered for the select screen and the
   turn order, battle texts use the custom name. Each unit's skeleton is saved the first time it fights, so any unit can
   become a base. Online: the opponent needs the same `Custom/<id>` folder to see the look (gameplay is unaffected).
+- Custom characters show their own name in battle texts and their portrait in the team HUD (hero bases too) and the
+  turn order; fingers follow the animations; limb pieces are stretched to the base's bones so joints meet; models
+  without a skeleton ride the hips; textures moved away from the model file are found; online, a version stamp tells
+  when both players have different files for the same character.
+- **Fix: the mod froze when the game window was minimized** (fights waited forever): the per-frame work now also runs
+  from the world tick when the window does not draw.
 
 ## 0.3.0 - 2026-10-07
 - **Versus AI**: play alone against the computer (VERSUS -> Versus AI). Build both teams, or leave team 2 empty for a

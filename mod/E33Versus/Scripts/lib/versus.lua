@@ -796,6 +796,7 @@ end
 -- Per-frame work. Hooks only call V.* so that reloading this file updates behaviour.
 function V.tick(pc)
   if V.loadCheck() then return end
+  if TICK and TICK.fallback then pcall(TICK.fallback) end   -- window minimized: the widget ticker is silent
   -- A finishing blow by an enemy-class unit happens while its OPPONENTS are labelled "heroes": the game would see
   -- "all heroes dead" and play the defeat scene. Re-label from our side the frame a side is wiped (before the game's
   -- own end check at action finish).

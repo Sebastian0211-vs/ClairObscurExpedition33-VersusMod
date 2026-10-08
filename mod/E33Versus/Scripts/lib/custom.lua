@@ -28,6 +28,7 @@ end
 -- (Re)read every Custom/<id>/character.lua. Bad files are skipped and logged.
 function CUSTOM.scan()
   local defs = {}
+  CUSTOM.hashCache = {}
   for _, id in ipairs(listDirs(CUSTOM.DIR)) do
     local f = CUSTOM.DIR .. id .. "/character.lua"
     local h = io.open(f, "r")
@@ -84,6 +85,16 @@ function CUSTOM.heroClash(u)
 end
 function CUSTOM.baseNameOfHero(id) for _, h in ipairs(V and V.HEROES or {}) do if h.id == id then return h.label end end; return id end
 
+-- Version stamp of a character's look (first line of mesh.lua, written by CharForge): online, both PCs compare it.
+function CUSTOM.hash(id)
+  CUSTOM.hashCache = CUSTOM.hashCache or {}
+  if CUSTOM.hashCache[id] ~= nil then return CUSTOM.hashCache[id] or nil end
+  local h, f = nil, io.open(CUSTOM.DIR .. id .. "/mesh.lua", "r")
+  if f then h = (f:read("l") or ""):match("charforge%-hash: (%x+)"); f:close() end
+  CUSTOM.hashCache[id] = h or false
+  return h
+end
+
 -- ---------- assets ----------
 function CUSTOM.mesh(id)
   local m = CUSTOM.meshCache[id]
@@ -125,11 +136,59 @@ function CUSTOM.portrait(id)
   h:close()
   return CUSTOM.texture(id, "portrait.png")
 end
+-- Team-1 HUD portrait. Hero portraits are re-loaded from the character by the widget itself (SetPortraitImage /
+-- LoadFromCharacter at turn changes), so the custom one is re-applied after those calls (hook below).
+CUSTOM.hud = CUSTOM.hud or {}   -- widget address -> custom id
+CUSTOM.PORTRAIT_W = "/Game/UI/Widgets/HUD_Battle/SubWidget/Characters/WBP_HUD_Battle_CharacterPortrait.WBP_HUD_Battle_CharacterPortrait_C"
+local function paintPortrait(widget, t)
+  for _, n in ipairs({ "Character_Portrait_Selected", "Character_Portrait_Damaged" }) do
+    pcall(function() widget[n]:SetBrushFromTexture(t, false) end)
+  end
+end
 function CUSTOM.setPortrait(widget, id)
   local t = CUSTOM.portrait(id)
   if not (t and widget and widget:IsValid()) then return end
-  widget.Character_Portrait_Selected:SetBrushFromTexture(t, false)
-  widget.Character_Portrait_Damaged:SetBrushFromTexture(t, false)
+  CUSTOM.hud[widget:GetAddress()] = id
+  paintPortrait(widget, t)
+  CUSTOM.hookPortraits()
+end
+function CUSTOM.onPortraitRefresh(ctx)
+  local w = ctx:get()
+  local id = w and CUSTOM.hud[w:GetAddress()]
+  if not id then return end
+  local t = CUSTOM.portrait(id)
+  if t then paintPortrait(w, t) end
+end
+function CUSTOM.hookPortraits()
+  if E33V_CUSTOM_PORTRAIT_HOOKS2 then return end
+  local n = 0
+  for _, fn in ipairs({ "SetPortraitImage", "SetPortrait", "LoadFromCharacter", "OnCharacterTurnStart", "OnHPChanged", "OnResurrect" }) do
+    if pcall(RegisterHook, CUSTOM.PORTRAIT_W .. ":" .. fn, function(ctx) pcall(CUSTOM.onPortraitRefresh, ctx) end) then n = n + 1 end
+  end
+  -- turn order (top left): each portrait widget gets its character through SetCharacter
+  if pcall(RegisterHook, CUSTOM.TURN_W .. ":SetCharacter", function(ctx, who) pcall(CUSTOM.onTurnOrderPortrait, ctx, who) end) then n = n + 1 end
+  E33V_CUSTOM_PORTRAIT_HOOKS2 = n > 0
+  log("portrait hooks: " .. n)
+end
+CUSTOM.TURN_W = "/Game/UI/Widgets/HUD_Battle/SubWidget/TurnOrder/WBP_HUD_TurnOrder_Portrait.WBP_HUD_TurnOrder_Portrait_C"
+-- the custom id of a battle character, from the actor or one of its components (the stats component)
+function CUSTOM.idOf(obj)
+  if not (obj and obj.IsValid and obj:IsValid() and V and V.customOf) then return nil end
+  local id = V.customOf[obj:GetAddress()]
+  if id then return id end
+  local ok, owner = pcall(function() return obj:GetOwner() end)
+  if ok and owner and owner:IsValid() then return V.customOf[owner:GetAddress()] end
+end
+function CUSTOM.onTurnOrderPortrait(ctx, who)
+  local w = ctx:get()
+  local c = who and who:get()
+  local id = CUSTOM.idOf(c)
+  if not id then return end
+  local t = CUSTOM.portrait(id)
+  if not t then return end
+  for _, n in ipairs({ "Portrait_Ally", "Portrait_enemy", "Portrait_EnemyAlly" }) do
+    pcall(function() w[n]:SetBrushFromTexture(t, false) end)
+  end
 end
 -- One dynamic instance of the game's character material per (custom character, material slot) and actor.
 function CUSTOM.material(actor, id, m)
@@ -214,11 +273,15 @@ function CUSTOM.apply(actor, id)
     end
   end
   CUSTOM.parts[actor:GetAddress()] = parts
-  -- turn-order icon (an object property). The display name is NOT written: assigning an FText property from Lua
-  -- (UE4SS 3.0.1) corrupted memory and crashed the game a few frames later in memcpy (11:20 and 11:29 tests).
+  pcall(CUSTOM.hookPortraits)
+  -- Battle texts ("<name> attacks") and the turn-order icon. The name goes through the engine's own
+  -- SetTextPropertyByName: assigning the FText property from Lua (UE4SS 3.0.1) corrupted memory and crashed the game
+  -- a few frames later in memcpy (11:20 and 11:29 tests).
   pcall(function()
+    local st = actor.AC_jRPG_CharacterStats
+    StaticFindObject("/Script/Engine.Default__KismetSystemLibrary"):SetTextPropertyByName(st, FName("CharacterDisplayName"), FText(d.name))
     local icon = CUSTOM.portrait(id)
-    if icon then actor.AC_jRPG_CharacterStats.CharacterBattleIcon = icon end
+    if icon then st.CharacterBattleIcon = icon end
   end)
   log(("%s on %s: %d sections (%d bones missing), %d base meshes hidden, %.2f s"):format(id, actor:GetFName():ToString(), built, missing, hidden, os.clock() - t0))
   return built

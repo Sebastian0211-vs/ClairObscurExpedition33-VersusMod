@@ -222,6 +222,7 @@ function SEL.build()
         nm = SEL.cut(nm, 17)
         place(ctext(tree, nm, "body", WHITE, 20), x + 160, y + 44)
         place(ctext(tree, ("Cost %d"):format(V.cost(u)), "small", GOLD, 15), x + 160, y + 84)
+        if u.versionMismatch then place(ctext(tree, "Other version on your PC", "small", RED, 13), x + 250, y + 84) end
         local pool = u.kind == "enemy" and WH and WH.rowMoves(u.row)
         if pool and #pool > WH.MAX_SKILLS then
           place(ctext(tree, ("Moves %d / %d   (R)"):format(#(u.loadout or {}), #pool), "small", GREY, 14), x + 160, y + 108)
