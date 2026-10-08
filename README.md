@@ -57,7 +57,7 @@ In battle everything uses the game's normal battle controls.
 1. Install [Blender](https://www.blender.org/download/) 4.2+.
 2. Play one versus match with the unit you want as a base (a hero, Chroma Maelle, a Chalier...): its skeleton is saved.
 3. Drag your model onto `ue4ss\Mods\E33Versus\CharForge\CharForge.exe`, pick the base, a name and a cost.
-4. VERSUS -> **Custom** tab. Details, supported models and limits: [tools/charforge/README.md](tools/charforge/README.md).
+4. VERSUS -> **Custom** tab. Details, supported models and limits: [tools/charforge/README.md](tools/charforge/README.md); status and roadmap: [docs/custom-characters.md](docs/custom-characters.md).
 
 ## Play online
 1. One of you hosts a relay server (below) — or use a server a friend runs.
