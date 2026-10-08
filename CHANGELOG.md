@@ -16,6 +16,21 @@
   device you last used. The category tabs show LB / RB on a controller.
 - **Selection highlight like the game's** (#10): the selected menu entry, move and music track get the game's own
   button hover highlight (animated brush stroke) instead of the mod's gold frame / orange stroke.
+- **Custom characters**: any 3D model becomes a versus fighter (new **Custom** tab in the character select). The model
+  wears a base unit of the game (a hero or any enemy) and plays with its moves, animations, AI and rules; its own look
+  is hidden. **CharForge** (`CharForge.exe`, drag a model onto it; Blender 4.2+ required) converts `.glb/.gltf`,
+  `.fbx`, `.obj`, `.vrm`, `.dae`, `.blend`, `.usd`... : rigged humanoids bend with the animations (rigid parts per
+  bone), unrigged models ride the hips. Textures and colours kept, a portrait is rendered for the select screen and the
+  turn order, battle texts use the custom name. Each unit's skeleton is saved the first time it fights, so any unit can
+  become a base. Online: the opponent needs the same `Custom/<id>` folder to see the look (gameplay is unaffected).
+- Custom characters show their own name in battle texts and their portrait in the team HUD (hero bases too) and the
+  turn order; fingers follow the animations; limb pieces are stretched to the base's bones so joints meet; models
+  without a skeleton ride the hips; textures moved away from the model file are found; online, a version stamp tells
+  when both players have different files for the same character.
+- **Fix: the mod froze when the game window was minimized** (fights waited forever): the per-frame work now also runs
+  from the world tick when the window does not draw.
+- Custom/ files are loaded as data only (shared folders cannot run code); the material and textures of a match's custom
+  characters load before the battle starts; their engine handles are dropped on every map load and match start.
 
 ## 0.4.0 - 2026-10-08
 Both players need 0.4.0 for online matches (new sync messages).

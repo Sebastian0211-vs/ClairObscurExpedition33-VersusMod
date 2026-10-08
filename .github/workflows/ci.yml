@@ -28,7 +28,7 @@ jobs:
           python-version: "3.12"
 
       - name: Python compile
-        run: python -m py_compile sidecar/e33net.py server/e33relay.py server/test_relay.py tools/fakepeer.py
+        run: python -m py_compile sidecar/e33net.py server/e33relay.py server/test_relay.py tools/fakepeer.py tools/charforge/charforge.py tools/charforge/blender_convert.py
 
       - name: Relay integration test (python)
         run: |

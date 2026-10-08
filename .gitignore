@@ -15,3 +15,6 @@ server/.env
 # local tooling
 .idea/
 .venv/
+# custom characters are made on each player's PC from their own models (tools/charforge); only the README ships
+mod/E33Versus/Custom/*
+!mod/E33Versus/Custom/README.md

@@ -9,7 +9,11 @@ AI.THINK = 1.1            -- seconds before the AI acts (the turn stays readable
 local function alog(s) V.log("AI " .. s) end
 
 function AI.active() return V.cfg.ai == true and not V.online end
-function AI.controls(c) return AI.active() and V.sideOf and V.sideOf[c:GetAddress()] == AI.SIDE end
+-- V.cfg.aiBoth (developer test, set from the dev bridge): the computer plays both teams.
+function AI.controls(c)
+  local side = V.sideOf and V.sideOf[c:GetAddress()]
+  return AI.active() and side ~= nil and (side == AI.SIDE or V.cfg.aiBoth == true)
+end
 
 -- Target: usually the weakest opponent (lowest HP share), sometimes a random one.
 function AI.pickTarget(u)

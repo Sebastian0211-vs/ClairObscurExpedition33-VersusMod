@@ -46,7 +46,11 @@ end
 pcall(V.dedupeNames)
 V.CAP = 15
 V.HERO_COST = 5  -- placeholder until hero levels/builds are normalized
-function V.cost(u) if not u then return 0 end; return u.kind == "hero" and V.HERO_COST or ((ROSTER[u.row] or {}).cost or 5) end
+function V.cost(u)
+  if not u then return 0 end
+  if u.custom then local d = CUSTOM and CUSTOM.def(u.custom); return d and d.cost or 5 end   -- custom characters: own cost
+  return u.kind == "hero" and V.HERO_COST or ((ROSTER[u.row] or {}).cost or 5)
+end
 function V.teamCost(side, exceptSlot) local t = 0; for i = 1, 3 do if i ~= exceptSlot then t = t + V.cost(V.cfg[side][i]) end end; return t end
 -- Phase entries: a boss row can be picked directly in a later phase as "<row>#P<n>" (costs more).
 -- Disabled: starting directly in phase 2 froze the game (phase-2 behaviour needs the real transition setup).
@@ -75,6 +79,7 @@ function V.enemyRows(filter)
 end
 V.CATEGORIES = {
   { label = "Heroes", list = function() local h = V.availableHeroes(); for _, x in ipairs(h) do x.label = ("[%d] %s"):format(V.HERO_COST, x.label) end; return h end },
+  { label = "Custom", list = function() return CUSTOM and CUSTOM.list() or {} end },   -- imported models (Custom/<id>/)
   { label = "Chroma heroes", list = function() return V.enemyRows(function(r) return r:find("^CZ_Chroma") end) end },
   { label = "Bosses", list = function() return V.enemyRows(function(r, d) return d.boss end) end },
   { label = "Elites & Alphas", list = function() return V.enemyRows(function(r, d) return d.arch == "Elite" or d.arch == "Alpha" end) end },
@@ -247,12 +252,16 @@ function V.start()
   V.spawnAt, V.spawnWarned = os.clock(), nil
   log("party healed: " .. tostring(cm and cm:IsValid() and pcall(function() cm:FullHealAllCharacters() end)))
   V.spawnPending = true
+  -- custom characters: parse their meshes, load the material and import the textures NOW, before the battle starts
+  -- streaming (setup then only builds components)
+  if CUSTOM then pcall(CUSTOM.preload, V.cfg) end
   V.trigger()
 end
 -- Forget the previous match: a rematch in the same world otherwise ran the end check on the old (destroyed) units
 -- at the placeholder battle's first turn -> forced CheckBattleEnd -> instant defeat -> crash (11:19 test).
 function V.resetMatch()
-  V.units, V.sideOf, V.uidOf, V.rowOf = {}, {}, {}, {}
+  V.units, V.sideOf, V.uidOf, V.rowOf, V.customOf = {}, {}, {}, {}, {}
+  if CUSTOM then CUSTOM.forgetMatch() end
   V.ended, V.turnSeen, V.lastSig, V.endWatch, V.heroSide, V.frameErr = nil, nil, nil, nil, nil, nil
   V.lastSnap, V.lastActor, V.lastSide, V.queuedDeathUnits = nil, nil, nil, nil
   V.counterUnits = {}
@@ -304,6 +313,7 @@ function V.setup()
     local addr = actor:GetAddress()
     V.sideOf[addr] = side
     V.rowOf = V.rowOf or {}; V.rowOf[addr] = u.row
+    V.customOf = V.customOf or {}; V.customOf[addr] = u.custom
     -- same unit id on both PCs for online sync: side .. team slot
     V.uidOf = V.uidOf or {}
     for k = 1, 3 do if V.cfg[side][k] == u then V.uidOf[addr] = side .. k end end
@@ -323,6 +333,13 @@ function V.setup()
     end
     V.units[#V.units + 1] = actor; V.spawned[#V.spawned + 1] = actor
     log("spawned " .. msg)
+    if CUSTOM then
+      pcall(CUSTOM.autoDump, actor, u)   -- every unit's skeleton becomes usable as a base for tools/charforge
+      if u.custom then
+        local okC, errC = pcall(CUSTOM.apply, actor, u.custom)
+        if not okC then log("custom look " .. tostring(u.custom) .. " FAILED: " .. tostring(errC)) end
+      end
+    end
   end
   local spotOf = { 0, 1, 2 }  -- slot -> visible spot
 
@@ -902,6 +919,7 @@ end
 -- Per-frame work. Hooks only call V.* so that reloading this file updates behaviour.
 function V.tick(pc)
   if V.loadCheck() then return end
+  if TICK and TICK.fallback then pcall(TICK.fallback) end   -- window minimized: the widget ticker is silent
   -- A finishing blow by an enemy-class unit happens while its OPPONENTS are labelled "heroes": the game would see
   -- "all heroes dead" and play the defeat scene. Re-label from our side the frame a side is wiped (before the game's
   -- own end check at action finish).
@@ -943,7 +961,8 @@ end
 -- 11:45). Drop them all when a load starts; everything is looked up again in the new world.
 function V.dropHandles()
   U._bm, V.worldPC = nil, nil
-  V.units, V.sideOf, V.uidOf, V.rowOf, V.lastSnap = {}, {}, {}, {}, nil
+  V.units, V.sideOf, V.uidOf, V.rowOf, V.customOf, V.lastSnap = {}, {}, {}, {}, {}, nil
+  if CUSTOM then CUSTOM.dropHandles() end   -- imported textures, mesh components and HUD widgets of the old level
   if TICK then TICK.pc, TICK.w = nil, nil end
   if GP then GP.titlePC = nil end
   if SYNC then
@@ -1056,7 +1075,9 @@ function V.rebuildHUD()
   for _, u in ipairs(V.units or {}) do
     if u:IsValid() and V.sideOf[u:GetAddress()] == "A" then
       local o = {}; h:AddCharacter(u.AC_jRPG_CharacterStats, o); n = n + 1
-      if P.isEnemyClass(u) then pcall(V.setPortrait, o.CreatedWidget, (ROSTER[V.rowOf and V.rowOf[u:GetAddress()] or ""] or {}).portrait) end
+      local cu = V.customOf and V.customOf[u:GetAddress()]
+      if cu and CUSTOM then pcall(CUSTOM.setPortrait, o.CreatedWidget, cu)
+      elseif P.isEnemyClass(u) then pcall(V.setPortrait, o.CreatedWidget, (ROSTER[V.rowOf and V.rowOf[u:GetAddress()] or ""] or {}).portrait) end
     end
   end
   pcall(function() h:Set_CharactersCount(n) end)

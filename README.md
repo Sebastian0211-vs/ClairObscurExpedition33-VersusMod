@@ -12,6 +12,8 @@ PC or online.
 - **Boss phases** as a hard-to-trigger super move (*Phase Up*), not a second life.
 - **Arenas:** fight where your save stands, or travel to one of 64 locations.
 - **Online 1v1** through a tiny relay server you can host yourself (one Docker command).
+- **Custom characters:** turn any 3D model (`.glb`, `.fbx`, `.obj`, `.vrm`...) into a fighter with **CharForge**: it plays
+  with the moves and animations of the unit you pick as its base (see [CharForge](tools/charforge/README.md)).
 
 > Status: early test build (0.x). Expect rough edges — please report them in Issues.
 
@@ -51,6 +53,12 @@ Uninstall: delete `ue4ss\Mods\E33Versus`. Logs: `ue4ss\Mods\E33Versus\data\versu
 
 In battle everything uses the game's normal battle controls.
 
+## Custom characters
+1. Install [Blender](https://www.blender.org/download/) 4.2+.
+2. Play one versus match with the unit you want as a base (a hero, Chroma Maelle, a Chalier...): its skeleton is saved.
+3. Drag your model onto `ue4ss\Mods\E33Versus\CharForge\CharForge.exe`, pick the base, a name and a cost.
+4. VERSUS -> **Custom** tab. Details, supported models and limits: [tools/charforge/README.md](tools/charforge/README.md); status and roadmap: [docs/custom-characters.md](docs/custom-characters.md).
+
 ## Play online
 1. One of you hosts a relay server (below) — or use a server a friend runs.
 2. Title screen → **VERSUS** → **Online versus** → **Add server**: a name, the address, port (default `33033`) and the
@@ -79,6 +87,7 @@ no packages) or the systemd unit — see [`server/README.md`](server/README.md).
 - `sidecar/e33net.py`: the network helper (Lua has no sockets); releases ship it built as `e33net.exe` (PyInstaller).
 - `server/`: relay server, Dockerfile, compose file, `test_relay.py`.
 - `tools/fakepeer.py`: a scripted online opponent for solo testing.
+- `tools/charforge/`: custom characters (CLI + Blender converter); in game `Scripts/lib/custom.lua` rebuilds them.
 - CI checks every push; pushing a tag `vX.Y.Z` builds the release zips and the relay image
   (`ghcr.io/sebastian0211-vs/e33versus-relay`).
 
