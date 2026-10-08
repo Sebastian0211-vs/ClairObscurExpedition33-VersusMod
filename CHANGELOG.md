@@ -8,6 +8,11 @@
 - **Fix: charmed monsters froze the battle.** A charmed monster now attacks one of its allies with its basic move; a
   charmed monster with no ally left loses the match for its side (as in the base game).
 - Big units: the turn camera moves further to the side so a wide unit no longer hides its targets (#8, first part).
+- **Button prompts like the game's** (#9): the select screen, arena / music picker and Versus menus show the game's
+  own controller icons (A, B, X, Y, LB/RB, LT/RT, sticks) or its keyboard key frames, with readable labels, for the
+  device you last used. The category tabs show LB / RB on a controller.
+- **Selection highlight like the game's** (#10): the selected menu entry, move and music track get the game's own
+  button hover highlight (animated brush stroke) instead of the mod's gold frame / orange stroke.
 
 ## 0.4.0 - 2026-10-08
 Both players need 0.4.0 for online matches (new sync messages).
