@@ -16,10 +16,7 @@
   game played its counter camera and prompt for over half a second. It is now ended on the first frame.
 - **Fix: charmed monsters froze the battle.** A charmed monster now attacks one of its allies with its basic move; a
   charmed monster with no ally left loses the match for its side (as in the base game).
-- Big units: the turn camera moves further to the side so a wide unit no longer hides its targets (#8).
-- **Fix: boss cinematics filmed from the wrong place** (#8, #11). Some boss skills (Sirene's) play a cinematic made
-  for their own arena; in a versus arena the camera went inside walls and to another part of the map. Those
-  cinematics now keep the battle camera, like the game does with battle camera movements turned off.
+- Big units: the turn camera moves further to the side so a wide unit no longer hides its targets (#8, first part).
 - **Button prompts like the game's** (#9): the select screen, arena / music picker and Versus menus show the game's
   own controller icons (A, B, X, Y, LB/RB, LT/RT, sticks) or its keyboard key frames, with readable labels, for the
   device you last used. The category tabs show LB / RB on a controller.

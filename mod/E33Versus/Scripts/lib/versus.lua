@@ -867,37 +867,9 @@ function V.onTurnStart(ctx)
     log("turn: " .. c:GetFName():ToString() .. " (heroes=side " .. tostring(V.heroSide) .. ")")
   end
 end
--- Fixed-position cinematics (#8/#11). Some boss skills (Sirene's, verified) play their sequence with
--- DisableSequenceSnapping: it runs at the world coordinates of the boss's own arena. In a versus arena the camera went
--- 20-35 km away, inside walls and rocks, while the copies the sequence spawns acted in another part of the level.
--- For those we do what the game does when "battle camera movements" are off: no sequence camera cuts, the battle's
--- overview camera instead (the attack still plays on the units here). Snapped sequences are left alone.
-V.DCM_CLASS = "/Game/jRPGTemplate/Blueprints/Components/AC_jRPG_DynamicCameraManager.AC_jRPG_DynamicCameraManager_C"
-function V.cbSequenceStart(ctx)
-  if not (V.turnSeen and V.sideOf and next(V.sideOf)) then return end   -- versus battles only
-  local a = ctx:get()
-  if not (a and a.DisableSequenceSnapping) then return end
-  local ok, err = pcall(function()
-    a.LevelSequenceActor:GetSequencePlayer():SetDisableCameraCuts(true)
-    local pc = TICK and TICK.pc
-    local dcm = pc and pc:IsValid() and pc:GetComponentByClass(StaticFindObject(V.DCM_CLASS))
-    if dcm and dcm:IsValid() then
-      dcm:SetNewDynamicPath(FName("Overview"), false, false, false, { X = 0, Y = 0, Z = 0 })
-      pc:SetViewTargetWithBlend(dcm.CameraActor, 0, 0, 0, false)
-    end
-    log("fixed-position cinematic " .. a.LevelSequence:GetFName():ToString() .. ": overview camera")
-  end)
-  if not ok then log("cinematic camera: " .. tostring(err)) end
-end
-function V.hookSequences()
-  if E33V_SEQ_HOOK then return end
-  E33V_SEQ_HOOK = pcall(RegisterHook, "/Game/Gameplay/EpicBattleSequence/BP_EpicBattleSequenceActor.BP_EpicBattleSequenceActor_C:StartSequenceInternal",
-    function(ctx) return V.cbSequenceStart(ctx) end)
-  log("sequence hook: " .. tostring(E33V_SEQ_HOOK))
-end
 -- Registered lazily: the battle character class is only loaded once a battle exists.
 function V.hookTurns()
-  pcall(V.hookKills); pcall(V.hookEndFlows); pcall(V.hookActionStart); pcall(V.hookSequences)
+  pcall(V.hookKills); pcall(V.hookEndFlows); pcall(V.hookActionStart)
   if E33V_TURNS_HOOKED then return end
   local ok, err = pcall(RegisterHook, "/Game/jRPGTemplate/Blueprints/Basics/BP_jRPG_Character_Battle_Base.BP_jRPG_Character_Battle_Base_C:OnTurnStart", function(ctx) V.onTurnStart(ctx) end)
   E33V_TURNS_HOOKED = ok
