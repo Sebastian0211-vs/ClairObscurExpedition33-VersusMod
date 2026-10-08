@@ -25,14 +25,37 @@ local function log(s) if V and V.log then V.log("CUSTOM " .. s) end end
 CUSTOM.DATA_WORDS = {}
 for w in ("return true false materials sections color tex bone mat v n uv t name base kind id row cost keepWeapons " ..
   "source portrait"):gmatch("%S+") do CUSTOM.DATA_WORDS[w] = true end
+-- Strings and comments removed in ONE left-to-right pass, like Lua's own lexer: whichever of ", ' or -- comes first
+-- opens a string or a comment, so a quote inside the other kind of string can't hide code. Strings are single line
+-- (escapes and long strings are refused before); an unterminated one makes the file invalid (nil).
+local function stripStrings(text)
+  local out, i = {}, 1
+  while true do
+    local s = text:find("[\"'%-]", i)
+    if not s then out[#out + 1] = text:sub(i); break end
+    local c = text:sub(s, s)
+    if c == "-" then
+      if text:sub(s + 1, s + 1) == "-" then                       -- comment: drop up to the end of the line
+        out[#out + 1] = text:sub(i, s - 1)
+        i = text:find("\n", s, true) or #text + 1
+      else out[#out + 1] = text:sub(i, s); i = s + 1 end          -- a minus sign
+    else
+      local e, nl = text:find(c, s + 1, true), text:find("\n", s + 1, true)
+      if not e or (nl and nl < e) then return nil end
+      out[#out + 1] = text:sub(i, s - 1) .. c .. c
+      i = e + 1
+    end
+  end
+  return table.concat(out)
+end
 function CUSTOM.loadData(path)
   local f = io.open(path, "rb"); if not f then return nil, "missing" end
   local text = f:read("a"); f:close()
   if text:find("[[", 1, true) or text:find("[=", 1, true) or text:find("\\", 1, true) then
     return nil, "long strings and escapes are not allowed"
   end
-  local bare = text:gsub('"[^"\n]*"', '""'):gsub("'[^'\n]*'", "''")   -- strings first (single line, no escapes)
-  bare = bare:gsub("%-%-[^\n]*", "")                                   -- then comments
+  local bare = stripStrings(text)
+  if not bare then return nil, "unterminated string" end
   bare = bare:gsub("%d+%.?%d*[eE][%+%-]?%d+", "0"):gsub("%d+%.?%d*", "0")   -- numbers (1e-05 too)
   for word in bare:gmatch("[%a_][%w_]*") do
     if not CUSTOM.DATA_WORDS[word] then return nil, "not a data file (word '" .. word .. "')" end
