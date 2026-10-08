@@ -90,6 +90,10 @@ def cmd_add(a):
         if "[charforge]" in line or "Error" in line or "Traceback" in line or line.startswith("  File"):
             print("  " + line.replace("[charforge] ", ""))
     if r.returncode != 0 or not os.path.isfile(os.path.join(out, "mesh.lua")):
+        # the reason is the last thing the converter printed (SystemExit message, Python error...)
+        tail = [l for l in (r.stdout + r.stderr).splitlines() if l.strip() and not l.startswith(("Blender ", "Read ", "Warning"))]
+        for line in tail[-3:]:
+            print("  " + line.replace("[charforge] ", ""))
         shutil.rmtree(out, ignore_errors=True)
         sys.exit("conversion failed (Blender exit code %d)" % r.returncode)
     base = ('{ kind = "hero", id = %s }' % lua_str(name)) if kind == "hero" else ('{ kind = "enemy", row = %s }' % lua_str(name))

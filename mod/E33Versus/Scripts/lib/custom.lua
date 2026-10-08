@@ -170,15 +170,45 @@ local function loadObj(path)
   if not (o and o:IsValid()) then pcall(LoadAsset, path); o = StaticFindObject(path .. "." .. name) end
   return (o and o:IsValid()) and o or nil
 end
+-- An imported texture belongs to nobody: the next garbage collection (level streaming at battle start, the periodic
+-- one) frees it while Lua still holds its address, and that address can come back "valid" as another object. Every
+-- cached texture is therefore held by the engine: one material instance per texture, set on a hidden component of
+-- the player controller (the keeper), which lives as long as the world. Issue #14: the texture imported by the
+-- preload was collected before the battle used it -> freed object in the material's uniform expressions on a render
+-- worker thread (Chroma Lune base, 3 crashes out of 3 on one PC).
+local function keeper()
+  local k = CUSTOM.keep
+  if k and k.comp:IsValid() and k.pc:IsValid() then return k end
+  local pc = FindFirstOf("PlayerController")
+  if not (pc and pc:IsValid()) then return nil end
+  local identity = { Translation = { X = 0, Y = 0, Z = 0 }, Rotation = { X = 0, Y = 0, Z = 0, W = 1 }, Scale3D = { X = 1, Y = 1, Z = 1 } }
+  local comp = pc:AddComponentByClass(StaticFindObject(CUSTOM.PMC), true, identity, false)
+  if not (comp and comp:IsValid()) then return nil end
+  comp:SetHiddenInGame(true, false)
+  CUSTOM.keep = { pc = pc, comp = comp, n = 0 }
+  CUSTOM.texCache = {}   -- entries held by an older keeper are not held any more
+  return CUSTOM.keep
+end
+local function hold(t)
+  local k = keeper()
+  local parent = loadObj(CUSTOM.MATERIAL)
+  if not (k and parent) then return nil end
+  local mid = StaticFindObject("/Script/Engine.Default__KismetMaterialLibrary"):CreateDynamicMaterialInstance(k.pc, parent, FName("E33V_KEEP"), 0)
+  mid:SetTextureParameterValue(FName(CUSTOM.TEX_PARAM), t)
+  k.comp:SetMaterial(k.n, mid); k.n = k.n + 1
+  return mid
+end
 function CUSTOM.texture(id, file)
   local key = id .. "/" .. file
-  local t = CUSTOM.texCache[key]
-  if t and t:IsValid() then return t end
+  local e = CUSTOM.texCache[key]
+  if e and CUSTOM.keep == e.keep and e.keep.comp:IsValid() then return e.tex end
   local krl = StaticFindObject("/Script/Engine.Default__KismetRenderingLibrary")
   local path = (CUSTOM.DIR .. key):gsub("/", "\\")
-  t = krl:ImportFileAsTexture2D(FindFirstOf("PlayerController"), path)
-  if t and t:IsValid() then CUSTOM.texCache[key] = t; return t end
-  log("texture not loaded: " .. path)
+  local t = krl:ImportFileAsTexture2D(FindFirstOf("PlayerController"), path)
+  if not (t and t:IsValid()) then log("texture not loaded: " .. path); return nil end
+  -- held before anything else can run a GC; if it can't be held it is still fine for the current call, not cached
+  if hold(t) then CUSTOM.texCache[key] = { tex = t, keep = CUSTOM.keep } else log("texture not held: " .. key) end
+  return t
 end
 -- Portrait for the select screen and the HUD: Custom/<id>/portrait.png (rendered by tools/charforge).
 function CUSTOM.portrait(id)
@@ -280,7 +310,7 @@ function CUSTOM.preload(cfg)
 end
 -- Engine objects are only valid in the level that made them: forget them on every map load (V.dropHandles) and the
 -- per-actor tables at every match start (V.resetMatch). Touching a freed UObject from Lua crashes the game.
-function CUSTOM.dropHandles() CUSTOM.texCache, CUSTOM.parts, CUSTOM.hud = {}, {}, {} end
+function CUSTOM.dropHandles() CUSTOM.texCache, CUSTOM.parts, CUSTOM.hud, CUSTOM.keep = {}, {}, {}, nil end
 function CUSTOM.forgetMatch() CUSTOM.parts, CUSTOM.hud = {}, {} end
 
 -- ---------- wearing a model ----------

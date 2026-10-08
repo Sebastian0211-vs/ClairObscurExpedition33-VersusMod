@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **Fix: crash with a custom character in the fight** (#14). The textures of a custom character were imported before
+  the battle but held by nothing in the engine: a garbage collection during the battle start freed them and the game
+  could crash on the first hit or the first frames (seen with a Chroma Lune base). Imported textures are now held by
+  the engine for as long as the mod uses them.
+- **Fix: CharForge failed on bases without legs** (#14), e.g. `--base enemy:SI_Axon_Sirene` stopped with "Blender
+  exit code 1". Floating units now get their hips and facing from the bone names; the model's legs ride the hips.
+  CharForge also prints the reason when a conversion fails.
 - **Fix: monster skill wheel ignored input the first time** (#6). Opening Skills right after the action page left the
   game in target selection: no move could be picked and RT / R did not switch pages until Back + reopen.
 - **Fix: counter camera on monster defenders** (#11). A full parry by a monster started a counter it can't perform; the
