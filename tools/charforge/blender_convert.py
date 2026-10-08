@@ -57,6 +57,27 @@ def import_model(path):
 import_model(MODEL)
 bpy.context.view_layer.update()
 
+# Images whose file is not where the model expects it (downloads often keep the model in source/ and the images in
+# textures/): look for the same file name around the model.
+def relink_images():
+    root = os.path.dirname(MODEL)
+    search = [root, os.path.dirname(root)]
+    found = {}
+    for base in search:
+        for dp, dn, fn in os.walk(base):
+            for f in fn: found.setdefault(f.lower(), os.path.join(dp, f))
+            if len(found) > 5000: break
+    for img in bpy.data.images:
+        if img.packed_file or img.source != 'FILE' or not img.filepath: continue
+        p = bpy.path.abspath(img.filepath)
+        if os.path.isfile(p): continue
+        alt = found.get(os.path.basename(p.replace("\\", "/")).lower())
+        if alt:
+            img.filepath = alt; img.reload(); info("texture relinked: " + os.path.basename(alt))
+        else:
+            warn("texture file missing: " + p)
+relink_images()
+
 def mesh_armature(o):
     for m in o.modifiers:
         if m.type == 'ARMATURE' and m.object: return m.object
@@ -187,6 +208,7 @@ def read_body(s, label):
     # facing from the feet: ankle -> toe, averaged
     def foot_fwd(ch):
         if len(ch) >= 4: v = pts[ch[3]] - pts[ch[2]]
+        elif len(ch) >= 3 and s.b[ch[2]]["tail"] is not None: v = s.b[ch[2]]["tail"] - pts[ch[2]]   # ankle bone -> toes
         elif len(ch) >= 2: v = pts[ch[-1]] - pts[ch[-2]]
         else: return Vector((0, 0, 0))
         v = v.copy(); v.z = 0
@@ -194,6 +216,19 @@ def read_body(s, label):
     fwd = foot_fwd(leg_chain[0]) + foot_fwd(leg_chain[1])
     up = Vector((0, 0, 1))
     if fwd.length < 1e-6: fwd = Vector((0, -1, 0)); warn(label + ": no foot direction, assuming facing -Y")
+    fwd.normalize()
+    # names, when they tell the sides apart, win over the feet (feet without toes point anywhere)
+    def name_side(n):
+        n = n.lower()
+        if re.search(r"(^|[^a-z])(l|left)([^a-z]|$)|left", n): return 1
+        if re.search(r"(^|[^a-z])(r|right)([^a-z]|$)|right", n): return -1
+        return 0
+    la, lb = leg_chain[0][0], leg_chain[1][0]
+    sa, sb = name_side(la), name_side(lb)
+    if sa and sb and sa != sb:
+        left0 = up.cross(fwd)
+        if ((s.b[la]["head"] - s.b[lb]["head"]).dot(left0) > 0) != (sa > sb):
+            fwd = -fwd; info(label + ": facing taken from the bone names (left/right)")
     fwd.normalize()
     left = up.cross(fwd).normalized()
     # arms: outermost bones on each side among torso bones not on the spine path
@@ -489,8 +524,18 @@ info("wrote " + OUTDIR)
 def render_portrait(path):
     sc = bpy.context.scene
     # frame the head and shoulders, seen from the front (model space; meshes were not moved)
+    # Workbench shows each material's ACTIVE image node: make it the base colour one (not the normal map)
+    for o in meshes:
+        for slot in o.material_slots:
+            m = slot.material
+            img, _ = find_base_image(m)
+            if img and m.node_tree:
+                for n in m.node_tree.nodes:
+                    if n.type == 'TEX_IMAGE' and n.image == img: m.node_tree.nodes.active = n; break
     if cbody:
-        head = CUST.b[cbody["neck"][-1]]["head"] if cbody["neck"] else CUST.b[cbody["spine"][-1]]["head"]
+        named = [n for n in cbody["neck"] if re.search(r"head", n.lower())]
+        hb = named[0] if named else (cbody["neck"][-1] if cbody["neck"] else cbody["spine"][-1])
+        head = CUST.b[hb]["head"]
         top = max((o.matrix_world @ v.co).z for o in meshes for v in o.data.vertices)
         fwd, up = cbody["fwd"], cbody["up"]
         size = max(0.25 * cbody["height"], (top - head.z) * 2.2)
