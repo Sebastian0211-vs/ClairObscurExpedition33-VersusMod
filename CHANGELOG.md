@@ -1,6 +1,21 @@
 # Changelog
 
 ## Unreleased
+- **Fix: monster skill wheel ignored input the first time** (#6). Opening Skills right after the action page left the
+  game in target selection: no move could be picked and RT / R did not switch pages until Back + reopen.
+- **Fix: counter camera on monster defenders** (#11). A full parry by a monster started a counter it can't perform; the
+  game played its counter camera and prompt for over half a second. It is now ended on the first frame.
+- **Fix: charmed monsters froze the battle.** A charmed monster now attacks one of its allies with its basic move; a
+  charmed monster with no ally left loses the match for its side (as in the base game).
+- Big units: the turn camera moves further to the side so a wide unit no longer hides its targets (#8).
+- **Fix: boss cinematics filmed from the wrong place** (#8, #11). Some boss skills (Sirene's) play a cinematic made
+  for their own arena; in a versus arena the camera went inside walls and to another part of the map. Those
+  cinematics now keep the battle camera, like the game does with battle camera movements turned off.
+- **Button prompts like the game's** (#9): the select screen, arena / music picker and Versus menus show the game's
+  own controller icons (A, B, X, Y, LB/RB, LT/RT, sticks) or its keyboard key frames, with readable labels, for the
+  device you last used. The category tabs show LB / RB on a controller.
+- **Selection highlight like the game's** (#10): the selected menu entry, move and music track get the game's own
+  button hover highlight (animated brush stroke) instead of the mod's gold frame / orange stroke.
 - **Custom characters**: any 3D model becomes a versus fighter (new **Custom** tab in the character select). The model
   wears a base unit of the game (a hero or any enemy) and plays with its moves, animations, AI and rules; its own look
   is hidden. **CharForge** (`CharForge.exe`, drag a model onto it; Blender 4.2+ required) converts `.glb/.gltf`,

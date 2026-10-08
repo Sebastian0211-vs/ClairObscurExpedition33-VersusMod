@@ -24,7 +24,7 @@ local function text(tree, s, style, color, size)
   if color then t:SetColorAndOpacity({ SpecifiedColor = { R = color[1], G = color[2], B = color[3], A = 1 }, ColorUseRule = 0 }) end
   return t
 end
-local ORANGE, DARK, GOLD, WHITE, GREY = { 0.62, 0.22, 0.04, 0.95 }, { 0.03, 0.025, 0.02, 0.92 }, { 0.72, 0.45, 0.13 }, { 0.92, 0.9, 0.86 }, { 0.32, 0.30, 0.28 }
+local DARK, GOLD, WHITE, GREY = { 0.03, 0.025, 0.02, 0.92 }, { 0.72, 0.45, 0.13 }, { 0.92, 0.9, 0.86 }, { 0.32, 0.30, 0.28 }
 
 -- Stand-in for the old title TextBlock: callers still do UI.title:SetText(FText("...")) to show a message.
 UI.title = UI.title or {}
@@ -78,16 +78,17 @@ function UI.build()
     local label = dim and o:sub(3) or o
     local ap = label:match("^%[(%d+) AP%]%s*")
     if ap then label = label:gsub("^%[%d+ AP%]%s*", "") end
-    -- orange brush when selected (like the game's highlighted command), dark stroke otherwise
-    if sel then place(image(UI.T.stain, { 0.9, 0.55, 0.2, 0.35 }), x0 - 30, y - 6, w + 40, rowH + 12) end
-    place(image(UI.T.slash, sel and ORANGE or DARK), x0 - 10 + (sel and 14 or 0), y, w, rowH)
-    place(text(tree, label, "body", dim and GREY or (sel and WHITE or { 0.8, 0.78, 0.74 }), 20), x0 + 30 + (sel and 14 or 0), y + 12)
+    -- dark stroke per row; the selected one gets the game's own button hover highlight (#10)
+    place(image(UI.T.slash, DARK), x0 - 10, y, w, rowH)
+    if sel then local b = SEL.hoverButton(); if b then place(b, x0 - 10, y, w, rowH); UI.hoverBtn = b end end
+    place(text(tree, label, "body", dim and GREY or (sel and WHITE or { 0.62, 0.60, 0.56 }), 20), x0 + 30, y + 12)
     if ap then place(text(tree, ap, "num", dim and GREY or GOLD, 22), x0 + w - 60, y + 10) end
   end
-  place(text(tree, "Enter confirm    Backspace back    Up/Down choose", "small", GREY, 14), x0, y0 + n * (rowH + gap) + 12)
+  place(SEL.prompts(tree, "menu", 28), x0, y0 + n * (rowH + gap) + 12)   -- game-style button prompts (#9)
   uw:AddToViewport(1000)
   UI.widget = uw
   if SEL and SEL.applyColors then SEL.applyColors() end
+  SEL.hoverNow(UI.hoverBtn); UI.hoverBtn = nil
 end
 function UI.refresh() if UI.lines then UI.build() end end
 function UI.move(d) if not UI.lines then return end; UI.sel = (UI.sel - 1 + d) % #UI.options + 1; UI.build() end

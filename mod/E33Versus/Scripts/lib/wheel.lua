@@ -226,7 +226,10 @@ function WH.placeCamera(u)
   local rx, ry = -dy, dx
   local H, R, feet = WH.size(u)
   local D = math.max(280, 1.35 * H) + R
-  local cam = { X = p.X - dx * D + rx * D * 0.62, Y = p.Y - dy * D + ry * D * 0.62, Z = feet + H * 0.8 + 40 }
+  -- Side offset: 62% of the distance (the framing small units always had), more for wide units so the line of sight
+  -- from the camera to the opponents passes beside the unit's body (#8: a big unit hid its targets).
+  local side = math.min(math.max(D * 0.62, (R * 1.15 + 40) * (D + len) / len), D * 2.5)
+  local cam = { X = p.X - dx * D + rx * side, Y = p.Y - dy * D + ry * side, Z = feet + H * 0.8 + 40 }
   local look = { X = p.X + dx * len * 0.6, Y = p.Y + dy * len * 0.6, Z = feet + H * 0.4 }
   local rot = KM:FindLookAtRotation(cam, look)
   WH.camPos, WH.camRot = cam, rot
@@ -270,8 +273,13 @@ function WH.frame()
     local on = tm["TargetingEnabled?"] == true
     if on and not c.flipped then
       c.flipped = true
+      -- Re-run the SAME kind of targeting with the new labels. The action page's Attack button only PRE-targets (a
+      -- preview, F confirms it): upgrading that to full targeting left targeting input on when the Skills page opened
+      -- next, so the page took no input (no pick, no RT/R page switch) until Back + reopen (#6).
+      local pre = tm.IsPretargeting == true; log("targeting on, pre " .. tostring(pre))
       V.applyPerspective(c.u, V.sideOf[c.u:GetAddress()])
-      pcall(function() tm:EnableTargeting(tm.SelectedTargetingType) end)
+      if pre then pcall(function() tm:EnablePreTargeting() end)
+      else pcall(function() tm:EnableTargeting(tm.SelectedTargetingType) end) end
     elseif not on and c.flipped then
       c.flipped = false
       V.applyPerspective(c.u)
@@ -289,8 +297,37 @@ function WH.frame()
 end
 
 -- ---------- turn ----------
+-- Charmed (BP_BattleBuff_Charmed: "forced to attack during its turn"): the game waits for an attack the wheel never
+-- makes (the turn froze). Same rule as the base game: a charmed unit attacks one of its allies with its basic move;
+-- charmed with no ally left, its side loses. Returns true when the turn was handled here.
+function WH.charmed(u)
+  local ok, list = pcall(ST.buffList, u)
+  if ok then for _, b in ipairs(list or {}) do if tostring(b.cls):find("Charmed", 1, true) then return true end end end
+  return false
+end
+function WH.charmedTurn(u)
+  if not WH.charmed(u) then return false end
+  local me = V.sideOf[u:GetAddress()]; local allies = {}
+  for _, x in ipairs(V.units or {}) do
+    if x:IsValid() and x:GetAddress() ~= u:GetAddress() and V.sideOf[x:GetAddress()] == me and x.AC_jRPG_CharacterStats.CurrentHP > 0 then allies[#allies + 1] = x end
+  end
+  WH.cur = nil
+  if #allies == 0 then
+    log(P.dname(u) .. " is charmed and alone -> side " .. tostring(me) .. " loses")
+    u.AC_jRPG_CharacterStats.CurrentHP = 0   -- the end check (V.frameCheck) ends the match; online it sends the end
+    return true
+  end
+  local target = allies[math.random(#allies)]
+  local move = WH.basicMove(u, P.moves(u))
+  log(("%s is charmed -> %s on its ally %s"):format(P.dname(u), move and move.prop or "-", P.dname(target)))
+  V.applyPerspective(u)
+  E.snapshot(u, move, target)
+  P.execute(u, move, target)
+  return true
+end
 -- Called at a controlled (non-hero) unit's turn start instead of the old list picker.
 function WH.beginTurn(u)
+  if WH.charmedTurn(u) then return end
   local a = u:GetAddress(); local bm = U.bm()
   local list, moves = WH.wheelMoves(u)
   local st = u.AC_jRPG_CharacterStats
