@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+- **CharForge: MMD models** (.pmx exports, Japanese bone names). Split hips (legs under 下半身, spine under 上半身)
+  are read correctly, head / wrist / fingers are matched by their MMD names, twist bones (腕捩, 手捩) no longer shift
+  the arm, and the console no longer crashes on Japanese names.
+- **CharForge: cloth and hair bones are never taken as limbs** (Lune's shoulder and leg cloth chains became her arms
+  and legs when used as a base).
+- **CharForge: texture alpha is a hard cut-out.** Semi-transparent fabric (alpha 0.5-1, drawn solid by the model's
+  own renderer) was see-through in game; below 0.5 stays hidden (eyeliner, overlays).
+
 ## 0.5.0 - 2026-10-08
 Both players should use 0.5.0 for online matches (custom characters are sent with the team).
 Known issue: #7 (fight out of sync between the two PCs) is still under investigation.

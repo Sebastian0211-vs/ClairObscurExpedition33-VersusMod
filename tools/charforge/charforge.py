@@ -178,6 +178,10 @@ def interactive(model):
 
 
 def main():
+    # bone names can be Japanese (MMD) or anything else: never crash on a console that can't show them
+    for st in (sys.stdout, sys.stderr):
+        try: st.reconfigure(errors="replace")
+        except Exception: pass
     if len(sys.argv) == 2 and os.path.isfile(sys.argv[1]):
         try:
             interactive(sys.argv[1])

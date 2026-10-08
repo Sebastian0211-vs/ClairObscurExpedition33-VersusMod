@@ -159,6 +159,9 @@ def read_blender_skeleton(arm):
 
 # ---------------------------------------------------------------- structural humanoid reading
 HELPER = re.compile(r"(^|[^a-z])(ik|vb|ikfk|ctrl|ctl|ctr|helper|prop|weapon|camera|attach|socket|target|pole)([^a-z]|$)|^ik_|^vb ", re.I)
+# cloth / hair / physics bones: never the main chain of a limb when a body bone continues it (Lune's shoulder cloth
+# and leg cloth chains are longer than her arms and legs). MMD names: 髪 hair, スカート skirt, 袖 sleeve, 裾 hem, リボン ribbon, 胸 chest
+SECONDARY = re.compile(r"cloth|hair|skirt|cape|coat|scarf|ribbon|sleeve|tail|breast|bust|jiggle|dyn|phys|spring|tie|belt|髪|スカート|袖|裾|リボン|胸", re.I)
 def read_body(s, label):
     # IK targets, virtual bones, weapon/prop/camera sockets and everything under them are not part of the body
     def helper(n):
@@ -185,8 +188,17 @@ def read_body(s, label):
             if not l or l in (a, b): continue
             d = (pts[a] - pts[b]).xy.length
             if not best or d > best[0]: best = (d, a, b, l)
+    lower = None
     if best:
         _, fa, fb, hips = best
+        # split hips (MMD: legs under 下半身 "lower body", spine under 上半身, both under グルーブ/センター): when the
+        # head is not under the legs' meeting bone, the hips are where the upper body joins it
+        top = max(names, key=lambda n: pts[n].z)
+        if hips not in s.ancestors(top):
+            up_hips = s.lca(hips, top)
+            if up_hips:
+                info(label + ": legs meet at " + hips + ", upper body joins at " + up_hips + " (used as hips)")
+                lower, hips = hips, up_hips
     else:
         # no legs (floating bosses like Sirene, busts, snakes...): hips = a bone named pelvis/hips above the head,
         # else the first bone under the root on the way to the highest bone
@@ -201,17 +213,18 @@ def read_body(s, label):
         c = kids(n)
         return 1 + (max(sub_depth(x) for x in c) if c else 0)
     def main_chain(start):
-        """follow the child with the deepest subtree (corrective / twist leaves are skipped)"""
+        """follow the child with the deepest subtree, body bones before cloth/hair (corrective / twist leaves are skipped)"""
         out = [start]; n = start
         while kids(n):
-            n = max(kids(n), key=lambda x: (sub_depth(x), (pts[x] - pts[out[-1]]).length)); out.append(n)
+            n = max(kids(n), key=lambda x: (not SECONDARY.search(x), sub_depth(x), (pts[x] - pts[out[-1]]).length)); out.append(n)
         return out
     # head: a bone named head under the hips (not under a leg), else the highest one
-    legA, legB = (s.path(hips, fa)[0], s.path(hips, fb)[0]) if fa else (None, None)
+    legroot = lower or hips
+    legA, legB = (s.path(legroot, fa)[0], s.path(legroot, fb)[0]) if fa else (None, None)
     def under(n, root): return root is not None and root in s.ancestors(n)
-    torso = [n for n in names if under(n, hips) and n != hips and not under(n, legA) and not under(n, legB)]
+    torso = [n for n in names if under(n, hips) and n != hips and not under(n, legA) and not under(n, legB) and not under(n, lower)]
     if not torso: return None
-    named_head = [n for n in torso if re.search(r"(^|[^a-z])head$", n.lower())]
+    named_head = [n for n in torso if re.search(r"(^|[^a-z])head$|^頭$", n.lower())]
     head_tip = min(named_head, key=lambda n: len(s.ancestors(n))) if named_head else max(torso, key=lambda n: pts[n].z)
     spine_path = s.path(hips, head_tip)
     leg_chain = [main_chain(legA)[:4], main_chain(legB)[:4]] if legA else []
@@ -265,7 +278,9 @@ def read_body(s, label):
             # then cut at the hand (named "hand", or the finger split: 3+ children with chains below them)
             chain = s.path(branch, tip)
             chain = main_chain(chain[0]) if chain else []
-            named = [i for i, n in enumerate(chain) if i >= 1 and re.search(r"hand", n.lower())]
+            # twist bones sit between the real joints (MMD 腕捩/手捩, roll/twist bones): they follow their parent
+            chain = [n for i, n in enumerate(chain) if i == 0 or not re.search(r"twist|roll|捩", n.lower())]
+            named = [i for i, n in enumerate(chain) if i >= 1 and re.search(r"hand|手首", n.lower())]
             hand_i = named[0] if named else len(chain) - 1
             if not named:
                 for i, n in enumerate(chain):
@@ -276,7 +291,7 @@ def read_body(s, label):
     for ch in leg_chain:
         legs["l" if lat(ch[-1]) > 0 else "r"] = ch
     # fingers: chains under each hand, told apart by name (thumb/index/middle/ring/pinky); helper leaves dropped
-    FINGER = (("thumb", r"thumb"), ("index", r"index|pointer"), ("middle", r"middle"), ("ring", r"ring"), ("pinky", r"pinky|little"))
+    FINGER = (("thumb", r"thumb|親指"), ("index", r"index|pointer|人指|人差"), ("middle", r"middle|中指"), ("ring", r"ring|薬指"), ("pinky", r"pinky|little|小指"))
     HELP = re.compile(r"half|bulge|side|dip|pip|mcp|palm|slide|twist|_in_|_in$|corrective|end$|_end", re.I)
     fingers = {}
     for side in ("l", "r"):
@@ -443,6 +458,12 @@ def material_slot(mat):
             w, h = im.size
             if max(w, h) > MAXTEX:
                 f = MAXTEX / max(w, h); im.scale(max(1, int(w * f)), max(1, int(h * f)))
+            # alpha as a hard cut-out: the game material reads alpha, so semi-transparent texels (MMD fabric, alpha
+            # 0.6-0.98 where the model is drawn solid) came out see-through; < 0.5 stays hidden (eyeliner, overlays)
+            if im.channels == 4:
+                import numpy as np
+                px = np.empty(im.size[0] * im.size[1] * 4, dtype=np.float32); im.pixels.foreach_get(px)
+                px[3::4] = (px[3::4] >= 0.5).astype(np.float32); im.pixels.foreach_set(px)
             fn = "tex_%d.png" % (len(tex_files) + 1)
             sc = bpy.context.scene
             # "Standard": the default AgX view transform would bake a tone curve into the saved colours
