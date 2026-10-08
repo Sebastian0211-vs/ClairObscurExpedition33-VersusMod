@@ -8,14 +8,20 @@ ONLINE = ONLINE or {}
 function ONLINE.packTeam(side)
   local out = {}
   for i = 1, 3 do local u = V.cfg[side][i]
-    if u then out[#out + 1] = u.kind == "hero" and { kind = "hero", id = u.id } or { kind = "enemy", row = u.row, loadout = u.loadout } end
+    if u then
+      local w = u.kind == "hero" and { kind = "hero", id = u.id } or { kind = "enemy", row = u.row, loadout = u.loadout }
+      w.custom = u.custom   -- the other PC needs the same Custom/<id> folder; without it the base unit is shown
+      out[#out + 1] = w
+    end
   end
   return out
 end
 function ONLINE.unpackTeam(list)
   local out = {}
   for _, w in ipairs(list or {}) do
-    if w.kind == "hero" then
+    local cu = w.custom and CUSTOM and CUSTOM.unit(w.custom)
+    if cu then cu.loadout = w.loadout; out[#out + 1] = cu
+    elseif w.kind == "hero" then
       for _, h in ipairs(V.HEROES) do if h.id == w.id then out[#out + 1] = { kind = "hero", id = h.id, name = h.name or h.label, label = h.label } end end
     elseif w.row and ROSTER[w.row] then
       local d = ROSTER[w.row]

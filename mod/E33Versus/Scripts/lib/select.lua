@@ -25,6 +25,7 @@ SEL.side, SEL.cat, SEL.page, SEL.cur = SEL.side or "A", SEL.cat or 1, SEL.page o
 local texCache = {}
 function SEL.tex(path)
   if not path or path == "" then return nil end
+  if path:sub(1, 7) == "custom:" then return CUSTOM and CUSTOM.portrait(path:sub(8)) end
   local t = texCache[path]
   if t and t:IsValid() then return t end
   local name = path:match("([^/]+)$")
@@ -59,6 +60,7 @@ local function icon(tree, path, size, dim)
 end
 function SEL.unitIcon(u)
   if not u then return nil end
+  if u.custom then return "custom:" .. u.custom end   -- portrait.png of the custom character (CUSTOM.portrait)
   if u.kind == "hero" then return SEL.HERO_ICONS[u.id] end
   return (ROSTER[u.row] or {}).portrait
 end
@@ -88,7 +90,7 @@ SEL.HERO_ART = {
   Lune = TX .. "CharactersWidget/VictoryPortraits/T_HUD_VictoryScreen_LUNE", Sciel = TX .. "CharactersWidget/VictoryPortraits/T_HUD_VictoryScreen_SCIEL",
   Verso = TX .. "CharactersWidget/VictoryPortraits/T_HUD_VictoryScreen_VERSO", Monoco = TX .. "CharactersWidget/VictoryPortraits/T_HUD_VictoryScreen_MONOCO",
 }
-SEL.CAT_SHORT = { "Heroes", "Chroma", "Bosses", "Elites", "All" }
+SEL.CAT_SHORT = { "Heroes", "Custom", "Chroma", "Bosses", "Elites", "All" }
 local ST = "/Game/UI/Resources/Styles/Text/"
 SEL.STYLE = {
   first = ST .. "Heading/FirstLetter/CTS_H1First_TitleOutline", title = ST .. "Heading/Titles/CTS_H1_TitleOutline",
@@ -365,12 +367,13 @@ function SEL.build()
   local dy = H - 300
   place(image(SEL.T.detail, { 1, 1, 1, 0.97 }), gx0 - 10, dy, (gx1 - gx0) + 20, 230)
   if cu then
-    local art = cu.kind == "hero" and SEL.HERO_ART[cu.id] or SEL.unitIcon(cu)
+    local art = (cu.kind == "hero" and not cu.custom) and SEL.HERO_ART[cu.id] or SEL.unitIcon(cu)
     place(image(art), gx0 + 20, dy + 15, 200, 200)
     local nm = (cu.name or cu.label or "?"):gsub("^%[%d+%] ", "")
     place(ctext(tree, nm, "h2", GOLD, 26), gx0 + 240, dy + 30)
     local d = cu.kind == "enemy" and ROSTER[cu.row] or nil
     local kind = cu.kind == "hero" and "Expeditioner - your own build" or ((d and d.arch or "?") .. ((d and d.boss and d.arch ~= "Boss") and "  -  Boss" or ""))
+    if cu.custom and CUSTOM then kind = "Custom - plays as " .. CUSTOM.baseName(cu.custom) end
     local pool = cu.kind == "enemy" and WH and WH.rowMoves(cu.row)
     if pool then kind = kind .. ("      %d moves"):format(#pool) end
     place(ctext(tree, kind, "body", WHITE, 18), gx0 + 240, dy + 80)
@@ -581,7 +584,9 @@ function SEL.key(k)
   elseif k == "ENTER" then
     local slot = SEL.slotToFill()
     local u = SEL.list()[(SEL.page - 1) * perPage + SEL.cur]
+    local clash = u and CUSTOM and CUSTOM.heroClash(u)
     if not slot then SEL.msg = "Team is full (Backspace removes the last pick)"
+    elseif clash then SEL.msg = clash
     elseif u and V.teamCost(SEL.side, slot) + V.cost(u) > V.CAP then
       SEL.msg = ("Too expensive: %d pts left"):format(V.CAP - V.teamCost(SEL.side, slot))
     elseif u then

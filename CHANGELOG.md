@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+- **Custom characters**: any 3D model becomes a versus fighter (new **Custom** tab in the character select). The model
+  wears a base unit of the game (a hero or any enemy) and plays with its moves, animations, AI and rules; its own look
+  is hidden. **CharForge** (`CharForge.exe`, drag a model onto it; Blender 4.2+ required) converts `.glb/.gltf`,
+  `.fbx`, `.obj`, `.vrm`, `.dae`, `.blend`, `.usd`... : rigged humanoids bend with the animations (rigid parts per
+  bone), unrigged models ride the hips. Textures and colours kept, a portrait is rendered for the select screen and the
+  turn order, battle texts use the custom name. Each unit's skeleton is saved the first time it fights, so any unit can
+  become a base. Online: the opponent needs the same `Custom/<id>` folder to see the look (gameplay is unaffected).
+
 ## 0.3.0 - 2026-10-07
 - **Versus AI**: play alone against the computer (VERSUS -> Versus AI). Build both teams, or leave team 2 empty for a
   random one within the cap. AI monsters and bosses use their own moves on the AP economy (and the phase-up super

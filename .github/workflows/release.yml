@@ -1,7 +1,8 @@
 name: Release
 
 # Push a tag like v0.1.0 -> checks, then:
-#   - E33Versus-<tag>.zip         install-ready mod (extract into the game folder), network sidecar built as e33net.exe
+#   - E33Versus-<tag>.zip         install-ready mod (extract into the game folder), network sidecar built as e33net.exe,
+#                                 CharForge.exe (custom characters, runs Blender)
 #   - E33Versus-relay-<tag>.zip   relay server folder (Docker / systemd / plain python)
 #   - ghcr.io/<owner>/e33versus-relay:<tag> and :latest
 on:
@@ -30,6 +31,7 @@ jobs:
         run: |
           pip install pyinstaller==6.*
           pyinstaller --onefile --noconsole --name e33net --distpath build/bin --workpath build/work --specpath build sidecar/e33net.py
+          pyinstaller --onefile --console --name CharForge --distpath build/charforge --workpath build/work-cf --specpath build tools/charforge/charforge.py
 
       - name: Assemble the package (laid out as it installs)
         shell: bash
@@ -41,6 +43,9 @@ jobs:
           cp -r mod/E33Versus/Scripts/lib "$P/Scripts/"
           echo "E33V_VERSION = \"${VER}\"" > "$P/Scripts/version.lua"
           cp build/bin/e33net.exe "$P/bin/"
+          mkdir -p "$P/CharForge" "$P/Custom"
+          cp build/charforge/CharForge.exe tools/charforge/blender_convert.py tools/charforge/README.md "$P/CharForge/"
+          cp mod/E33Versus/Custom/README.md "$P/Custom/"
           echo "1" > "$P/enabled.txt"
           cp README.md LICENSE CHANGELOG.md package/
           (cd package && 7z a -tzip "../E33Versus-${VER}.zip" . > /dev/null)

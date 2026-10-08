@@ -22,7 +22,7 @@ for _, f in ipairs({ "version.lua", "dev.lua" }) do
 end
 os.execute('mkdir "' .. E33V_DATA:gsub("/", "\\"):gsub("\\$", "") .. '" 2>nul')
 
-local FILES = { "unitlib.lua", "uilib.lua", "picker.lua", "roster_data.lua", "move_data.lua", "arena_data.lua", "music_data.lua", "versus.lua", "music.lua",
+local FILES = { "unitlib.lua", "uilib.lua", "picker.lua", "custom.lua", "roster_data.lua", "move_data.lua", "arena_data.lua", "music_data.lua", "versus.lua", "music.lua",
   "battlelib.lua", "economy.lua", "phases.lua", "wheel.lua", "select.lua", "gamepad.lua", "titlebutton.lua", "json.lua",
   "net.lua", "screens.lua", "online.lua", "sync.lua", "defense.lua", "ai.lua", "ticker.lua" }
 function E33V_LOADALL(tag)

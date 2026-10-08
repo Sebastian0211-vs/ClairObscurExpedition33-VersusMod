@@ -46,7 +46,11 @@ end
 pcall(V.dedupeNames)
 V.CAP = 15
 V.HERO_COST = 5  -- placeholder until hero levels/builds are normalized
-function V.cost(u) if not u then return 0 end; return u.kind == "hero" and V.HERO_COST or ((ROSTER[u.row] or {}).cost or 5) end
+function V.cost(u)
+  if not u then return 0 end
+  if u.custom then local d = CUSTOM and CUSTOM.def(u.custom); return d and d.cost or 5 end   -- custom characters: own cost
+  return u.kind == "hero" and V.HERO_COST or ((ROSTER[u.row] or {}).cost or 5)
+end
 function V.teamCost(side, exceptSlot) local t = 0; for i = 1, 3 do if i ~= exceptSlot then t = t + V.cost(V.cfg[side][i]) end end; return t end
 -- Phase entries: a boss row can be picked directly in a later phase as "<row>#P<n>" (costs more).
 -- Disabled: starting directly in phase 2 froze the game (phase-2 behaviour needs the real transition setup).
@@ -75,6 +79,7 @@ function V.enemyRows(filter)
 end
 V.CATEGORIES = {
   { label = "Heroes", list = function() local h = V.availableHeroes(); for _, x in ipairs(h) do x.label = ("[%d] %s"):format(V.HERO_COST, x.label) end; return h end },
+  { label = "Custom", list = function() return CUSTOM and CUSTOM.list() or {} end },   -- imported models (Custom/<id>/)
   { label = "Chroma heroes", list = function() return V.enemyRows(function(r) return r:find("^CZ_Chroma") end) end },
   { label = "Bosses", list = function() return V.enemyRows(function(r, d) return d.boss end) end },
   { label = "Elites & Alphas", list = function() return V.enemyRows(function(r, d) return d.arch == "Elite" or d.arch == "Alpha" end) end },
@@ -303,6 +308,7 @@ function V.setup()
     local addr = actor:GetAddress()
     V.sideOf[addr] = side
     V.rowOf = V.rowOf or {}; V.rowOf[addr] = u.row
+    V.customOf = V.customOf or {}; V.customOf[addr] = u.custom
     -- same unit id on both PCs for online sync: side .. team slot
     V.uidOf = V.uidOf or {}
     for k = 1, 3 do if V.cfg[side][k] == u then V.uidOf[addr] = side .. k end end
@@ -322,6 +328,13 @@ function V.setup()
     end
     V.units[#V.units + 1] = actor; V.spawned[#V.spawned + 1] = actor
     log("spawned " .. msg)
+    if CUSTOM then
+      pcall(CUSTOM.autoDump, actor, u)   -- every unit's skeleton becomes usable as a base for tools/charforge
+      if u.custom then
+        local okC, errC = pcall(CUSTOM.apply, actor, u.custom)
+        if not okC then log("custom look " .. tostring(u.custom) .. " FAILED: " .. tostring(errC)) end
+      end
+    end
   end
   local spotOf = { 0, 1, 2 }  -- slot -> visible spot
 
@@ -914,7 +927,9 @@ function V.rebuildHUD()
   for _, u in ipairs(V.units or {}) do
     if u:IsValid() and V.sideOf[u:GetAddress()] == "A" then
       local o = {}; h:AddCharacter(u.AC_jRPG_CharacterStats, o); n = n + 1
-      if P.isEnemyClass(u) then pcall(V.setPortrait, o.CreatedWidget, (ROSTER[V.rowOf and V.rowOf[u:GetAddress()] or ""] or {}).portrait) end
+      local cu = V.customOf and V.customOf[u:GetAddress()]
+      if cu and CUSTOM then pcall(CUSTOM.setPortrait, o.CreatedWidget, cu)
+      elseif P.isEnemyClass(u) then pcall(V.setPortrait, o.CreatedWidget, (ROSTER[V.rowOf and V.rowOf[u:GetAddress()] or ""] or {}).portrait) end
     end
   end
   pcall(function() h:Set_CharactersCount(n) end)
