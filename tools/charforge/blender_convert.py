@@ -177,7 +177,6 @@ def read_body(s, label):
     if height <= 0: return None
     # feet: lowest bones; pick two with the largest lateral separation among the lowest 15%
     low = [n for n in names if pts[n].z <= zmin + 0.15 * height]
-    if len(low) < 2: return None
     best = None
     for i in range(len(low)):
         for j in range(i + 1, len(low)):
@@ -186,8 +185,18 @@ def read_body(s, label):
             if not l or l in (a, b): continue
             d = (pts[a] - pts[b]).xy.length
             if not best or d > best[0]: best = (d, a, b, l)
-    if not best: return None
-    _, fa, fb, hips = best
+    if best:
+        _, fa, fb, hips = best
+    else:
+        # no legs (floating bosses like Sirene, busts, snakes...): hips = a bone named pelvis/hips above the head,
+        # else the first bone under the root on the way to the highest bone
+        top = max(names, key=lambda n: pts[n].z)
+        line = s.ancestors(top)
+        named = [n for n in line if re.search(r"pelvis|hips?$", n.lower())]
+        hips = named[-1] if named else (line[-2] if len(line) >= 2 else None)
+        if not hips: return None
+        fa = fb = None
+        warn(label + ": no legs found, " + hips + " used as hips")
     def sub_depth(n):
         c = kids(n)
         return 1 + (max(sub_depth(x) for x in c) if c else 0)
@@ -198,14 +207,14 @@ def read_body(s, label):
             n = max(kids(n), key=lambda x: (sub_depth(x), (pts[x] - pts[out[-1]]).length)); out.append(n)
         return out
     # head: a bone named head under the hips (not under a leg), else the highest one
-    legA, legB = s.path(hips, fa)[0], s.path(hips, fb)[0]
-    def under(n, root): return root in s.ancestors(n)
+    legA, legB = (s.path(hips, fa)[0], s.path(hips, fb)[0]) if fa else (None, None)
+    def under(n, root): return root is not None and root in s.ancestors(n)
     torso = [n for n in names if under(n, hips) and n != hips and not under(n, legA) and not under(n, legB)]
     if not torso: return None
     named_head = [n for n in torso if re.search(r"(^|[^a-z])head$", n.lower())]
     head_tip = min(named_head, key=lambda n: len(s.ancestors(n))) if named_head else max(torso, key=lambda n: pts[n].z)
     spine_path = s.path(hips, head_tip)
-    leg_chain = [main_chain(legA)[:4], main_chain(legB)[:4]]
+    leg_chain = [main_chain(legA)[:4], main_chain(legB)[:4]] if legA else []
     # facing from the feet: ankle -> toe, averaged
     def foot_fwd(ch):
         if len(ch) >= 4: v = pts[ch[3]] - pts[ch[2]]
@@ -214,22 +223,31 @@ def read_body(s, label):
         else: return Vector((0, 0, 0))
         v = v.copy(); v.z = 0
         return v
-    fwd = foot_fwd(leg_chain[0]) + foot_fwd(leg_chain[1])
     up = Vector((0, 0, 1))
-    if fwd.length < 1e-6: fwd = Vector((0, -1, 0)); warn(label + ": no foot direction, assuming facing -Y")
-    fwd.normalize()
-    # names, when they tell the sides apart, win over the feet (feet without toes point anywhere)
     def name_side(n):
         n = n.lower()
         if re.search(r"(^|[^a-z])(l|left)([^a-z]|$)|left", n): return 1
         if re.search(r"(^|[^a-z])(r|right)([^a-z]|$)|right", n): return -1
         return 0
-    la, lb = leg_chain[0][0], leg_chain[1][0]
-    sa, sb = name_side(la), name_side(lb)
-    if sa and sb and sa != sb:
-        left0 = up.cross(fwd)
-        if ((s.b[la]["head"] - s.b[lb]["head"]).dot(left0) > 0) != (sa > sb):
-            fwd = -fwd; info(label + ": facing taken from the bone names (left/right)")
+    if leg_chain:
+        fwd = foot_fwd(leg_chain[0]) + foot_fwd(leg_chain[1])
+        if fwd.length < 1e-6: fwd = Vector((0, -1, 0)); warn(label + ": no foot direction, assuming facing -Y")
+        fwd.normalize()
+        # names, when they tell the sides apart, win over the feet (feet without toes point anywhere)
+        la, lb = leg_chain[0][0], leg_chain[1][0]
+        sa, sb = name_side(la), name_side(lb)
+        if sa and sb and sa != sb:
+            left0 = up.cross(fwd)
+            if ((s.b[la]["head"] - s.b[lb]["head"]).dot(left0) > 0) != (sa > sb):
+                fwd = -fwd; info(label + ": facing taken from the bone names (left/right)")
+    else:
+        # no feet: the left side is where the bones named left are (left = up x fwd, so fwd = left x up)
+        lv = Vector((0, 0, 0))
+        for n in torso:
+            lv += name_side(n) * (pts[n] - pts[hips])
+        lv.z = 0
+        if lv.length > 1e-6: fwd = lv.normalized().cross(up); info(label + ": facing taken from the bone names (left/right)")
+        else: fwd = Vector((0, -1, 0)); warn(label + ": no feet and no left/right names, assuming facing -Y")
     fwd.normalize()
     left = up.cross(fwd).normalized()
     # arms: outermost bones on each side among torso bones not on the spine path

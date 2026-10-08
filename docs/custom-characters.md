@@ -11,7 +11,7 @@ ProceduralMeshComponents snapped to those bones. No Unreal Editor needed.
 | Area | What | Verified |
 |---|---|---|
 | Import | `.glb/.gltf/.fbx/.obj/.vrm/.dae/.blend/.usd/.stl/.ply` through Blender 4.2+ | Soldier, X Bot (Mixamo), Cesium Man (Khronos), Freddy (.blend), Fox (.obj) |
-| Skeleton reading | Structural (hips, spine, neck/head, arms, legs), IK/helper bones ignored, facing from feet or L/R names | Mixamo, Khronos, Freddy rig, 7 game skeletons |
+| Skeleton reading | Structural (hips, spine, neck/head, arms, legs), IK/helper bones ignored, facing from feet or L/R names; bases without legs (hips and facing from names) | Mixamo, Khronos, Freddy rig, 9 game skeletons incl. Sirene (no legs) |
 | Fingers | Matched by name (thumb/index/middle/ring/pinky) | Mixamo (10), Freddy (8) |
 | Fit | Height, facing, per-bone rotation, limb pieces stretched to the base's bone lengths (`--stretch 0` to disable) | in game |
 | No skeleton | Whole model rides the hips | Fox .obj on Sciel |
@@ -23,7 +23,7 @@ ProceduralMeshComponents snapped to those bones. No Unreal Editor needed.
 | Skeleton dumps | Every unit that fights is saved to `data/skeletons/` and becomes a usable base | 7+ bases |
 | CharForge | CLI (`add/bases/list/remove`) and drag-and-drop `CharForge.exe` (release build) | exe tested on a mock install |
 | Safety | `Custom/` files loaded as data only (word whitelist + empty environment) | hostile files refused in game |
-| Stability | Handles dropped on map load / match start, assets preloaded before the battle trigger | 4+4 fight/reload cycles |
+| Stability | Handles dropped on map load / match start, assets preloaded before the battle trigger; imported textures held by the engine (material instances on a hidden component of the player controller) so a GC can't free them (#14) | 4+4 fight/reload cycles; 6-unit matches (4 customs incl. Chroma Lune and Sirene bases) with a forced GC every 4 s |
 | Online | Custom id + version stamp sent; missing folder -> base unit; different version flagged | packing only (no 2-PC match yet) |
 | Minimized window | Per-frame work runs from the world tick when the widget ticker is silent | in game (world and battle) |
 | Dev | `V.cfg.aiBoth`: the AI plays both teams (automated tests) | used for all tests |
@@ -45,6 +45,8 @@ ProceduralMeshComponents snapped to those bones. No Unreal Editor needed.
       base without playing it first.
 - [ ] **Own moves:** a custom character could get its own move list / loadout preset instead of the base's.
 - [ ] **Title screen minimized:** the mod pauses there (nothing ticks in Blueprint at the title); harmless today.
+- [ ] **Reproducible builds:** two CharForge runs on the same model can differ by a few vertices (Blender), so the
+      online version stamp differs when both players build the model themselves; sharing the folder avoids it.
 - [ ] **Sharing:** export/import a `Custom/<id>` folder as one zip from the game or CharForge.
 
 ## Known limits (by design)
