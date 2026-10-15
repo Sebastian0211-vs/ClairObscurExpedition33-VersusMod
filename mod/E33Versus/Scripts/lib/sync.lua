@@ -186,6 +186,7 @@ function SYNC.sendState()
   NET.msg("state", { n = V.online.turnN, units = units })
 end
 function SYNC.onState(m)
+  if V.ended then return end   -- the end is decided: late HP must not bring a unit the end killed back (log 2026-10-09)
   local fixed = {}
   for id, s in pairs(m.units or {}) do
     local u = SYNC.unit(id)
@@ -425,6 +426,12 @@ function SYNC.tick()
   if DEF and DEF.frame then DEF.frame() end
   SYNC.barrierTick()
   SYNC.resendTick()
+end
+
+-- My monster's move: the defender's PC decides its hits, so a death seen here waits for its end message (SYNC.onEnd).
+function SYNC.deferEnd()
+  local a = DEF and DEF.act
+  return SYNC.active() and not V.online.endSent and a ~= nil and a.mine and a.monster
 end
 
 -- ---------- one match end on both PCs ----------
