@@ -547,6 +547,7 @@ function V.checkSides(forceEnd, dyingAddr)
     end
   end
   if alive.A > 0 and alive.B > 0 then return false end
+  if not V.ended and SYNC and SYNC.deferEnd and SYNC.deferEnd() then return false end
   if V.ended then
     if forceEnd then bm.PendingResurrects:Empty(); local o = {}; bm:CheckBattleEnd(o) end
     return true

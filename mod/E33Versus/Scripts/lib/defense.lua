@@ -16,6 +16,26 @@ DEF.ANIM = { parry = "TryStartParry", gparry = "TryStartGradientParry", dodge = 
 -- One action at a time: who acts, hit counters per target uid, outcomes received per target uid.
 function DEF.begin(u)
   DEF.act = { actor = SYNC.uid(u), mine = SYNC.mine(u), monster = P.isEnemyClass(u), n = {}, res = {}, anim = {}, hp = {}, at = {} }
+  -- attacker's PC: every unit's state before the move = the truth until the defender reports a hit (DEF.revert)
+  if DEF.act.mine and DEF.act.monster then
+    local base = {}
+    for _, x in ipairs(V.units or {}) do
+      local id = SYNC.uid(x)
+      if id and x:IsValid() then pcall(function() base[id] = DEF.resultOf(x) end) end
+    end
+    DEF.act.base = base
+  end
+end
+-- Attacker's PC: a hit the defender has not reported must not stick. Its PC can land fewer or other hits than ours
+-- (projectiles: 12 there vs 7 here, log 2026-10-09), so keep the defender's last reported state; its result for this
+-- hit is applied when it arrives.
+function DEF.revert(uid)
+  local a = DEF.act; if not (a and a.mine and a.base) then return end
+  local last = a.lastApplied and a.lastApplied[uid]
+  local r = (last and a.hp[uid] and a.hp[uid][last]) or a.base[uid]
+  local t = SYNC.unit(uid); if not (r and t and t:IsValid()) then return end
+  local what = DEF.writeResult(t, r)
+  if what ~= "" then dlog(("hit %s: no outcome yet, kept the defender's state (%s)"):format(uid, what)) end
 end
 function DEF.stop() DEF.act = nil; DEF.watch = nil end
 
@@ -94,7 +114,7 @@ function DEF.cbHit(ctx, fromObj)
     -- attacker's PC: this hit is done; drop the flag we held for it
     local def = a.res[uid] and a.res[uid][k]
     if def and DEF.FLAG[def] then pcall(function() t[DEF.FLAG[def]] = false end) end
-    SYNC.after(0.1, function() DEF.applyResult(uid, k) end)
+    SYNC.after(0.1, function() if not DEF.applyResult(uid, k) then DEF.revert(uid) end end)
     dlog(("hit %s #%d here: %s (%s)"):format(uid, k, tostring(def or "-"), a.res[uid] and a.res[uid][k] ~= nil and "known" or "no outcome yet"))
   end
 end
@@ -155,14 +175,16 @@ end
 function DEF.applyResult(uid, k)
   local a = DEF.act; if not (a and a.mine) then return end
   local r = a.hp[uid] and a.hp[uid][k]
-  if not r or r.applied then return end
+  if not r then return false end   -- no result for this hit yet
+  if r.applied then return true end
   -- a later result for this unit already applied: an older one must not overwrite it
-  if (a.lastApplied and a.lastApplied[uid] or 0) > k then return end
+  if (a.lastApplied and a.lastApplied[uid] or 0) > k then return true end
   local t = SYNC.unit(uid); if not t then return end
   r.applied = true
   a.lastApplied = a.lastApplied or {}; a.lastApplied[uid] = k
   local what = DEF.writeResult(t, r)
   if what ~= "" then dlog(("hit %s #%d result: %s (defender's)"):format(uid, k, what)) end
+  return true
 end
 
 -- ---------- hero attacks: per-frame watcher ----------

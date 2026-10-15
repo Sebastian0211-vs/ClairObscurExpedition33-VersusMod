@@ -42,6 +42,8 @@ function ST.snap(u)
   local st = u.AC_jRPG_CharacterStats
   local s = { stats = {} }
   st.CharacterCurrentStats:ForEach(function(k, v) s.stats[tostring(k:get())] = v:get() end)
+  -- monsters' max AP (stat 2) is only raised by WH.setAP on the PC that wrote their AP: not state (their AP is s.ap)
+  if E33V_CONTROLLED and E33V_CONTROLLED[u:GetAddress()] then s.stats["2"] = nil end
   s.hp = st.CurrentHP
   s.shield = q(function() return st.CurrentShieldPoints end) or 0
   -- AP: the mod's economy for monsters (E.ap), the game's own AP for heroes
