@@ -7,6 +7,40 @@ local function dname(c) local ok, n = pcall(function() return c.AC_jRPG_Characte
 -- Move handles of a unit: every FRoutedEventHandle property on its own BP classes (names vary:
 -- "Skill Handle_X", "SkillHandle_X", "Skill Hande_X"), except the base class's DEBUG_OverrideSkillRouting.
 P.dname = dname
+P.GUID = "GUID_2_DFA374874639D7D56F0B8E8613D03461"   -- the FRoutedEventHandle id (A, B, C, D)
+function P.gkey(g) return g.A .. "," .. g.B .. "," .. g.C .. "," .. g.D end
+-- Skills the game declared for a unit in battle: handle id -> BP_RoutedEventInstance (empty outside a battle).
+function P.declared(u)
+  local map = {}
+  pcall(function() u.BP_EventRoutingSystemComponent_AISkills.SkillInstances:ForEach(function(k, v) map[P.gkey(k:get()[P.GUID])] = v:get() end) end)
+  return map
+end
+-- The game ignores DEBUG_OverrideSkillRouting: each monster's own AI (PerformActionByAI) rolls a random skill (lab
+-- 2026-10-16: 2 of 12 matched; online each PC rolled its own). So until that roll is routed, every entry of the unit's
+-- skill map points at the chosen skill: whatever it rolls, the chosen one plays (verified 6/6, no stall). The map is
+-- put back by the routing hook right after, or by the next force / level load at the latest.
+function P.forceSkill(u, prop)
+  P.restoreSkills()
+  local chosen = P.declared(u)[P.gkey(u[prop][P.GUID])]
+  if not chosen then log("force: " .. prop .. " is not a declared skill, the AI picks"); return end
+  local saved = {}
+  u.BP_EventRoutingSystemComponent_AISkills.SkillInstances:ForEach(function(k, v) saved[P.gkey(k:get()[P.GUID])] = v:get(); v:set(chosen) end)
+  P.forced = { unit = u, saved = saved }
+end
+function P.restoreSkills()
+  local f = P.forced; P.forced = nil
+  if not (f and f.unit:IsValid()) then return end
+  pcall(function() f.unit.BP_EventRoutingSystemComponent_AISkills.SkillInstances:ForEach(function(k, v) local o = f.saved[P.gkey(k:get()[P.GUID])]; if o then v:set(o) end end) end)
+end
+-- Hook callbacks only delegate to named functions (closures survive hot reloads unchanged). Runs after the routing.
+function P.cbRouted(ctx)
+  local f = P.forced
+  if f and f.unit:IsValid() and ctx:get():GetOwner():GetAddress() == f.unit:GetAddress() then P.restoreSkills() end
+end
+function P.hookRouting()
+  if E33V_ROUTEHOOK then return end
+  E33V_ROUTEHOOK = pcall(RegisterHook, "/Game/Gameplay/Battle/EventRoutingSystem/BP_EventRoutingSystemComponent.BP_EventRoutingSystemComponent_C:ExecuteEventFromHandle", function(ctx) return P.cbRouted(ctx) end)
+end
 function P.moves(u)
   local out, cls = {}, u:GetClass()
   while cls and cls:IsValid() do
@@ -21,6 +55,17 @@ function P.moves(u)
       end
     end)
     local ok, sup = pcall(function() return cls:GetSuperStruct() end); cls = ok and sup or nil
+  end
+  -- Only skills the game declared can play (Machinapieds: 7 handles, 4 declared), one entry per skill. Serpenphare's
+  -- AbsorbAP is its turn-start passive: as an action it never ends the turn (lab 2026-10-16).
+  local decl = P.declared(u)
+  if next(decl) then
+    local keep, seen = {}, {}
+    for _, m in ipairs(out) do
+      local key = P.gkey(u[m.prop][P.GUID])
+      if decl[key] and not seen[key] and not m.prop:find("AbsorbAP", 1, true) then seen[key] = true; keep[#keep + 1] = m end
+    end
+    if #keep > 0 then out = keep end
   end
   -- Bosses with phases: only offer the current phase's moves (others silently fall back to a phase-1 move).
   local okp, phase = pcall(function() return u.CurrentPhase end)
@@ -57,8 +102,8 @@ end
 function P.execute(u, move, target)
   -- A full parry by a non-hero would start a counter it can't perform and stall the battle.
   u.CanBeCountered = not P.isEnemyClass(target)
-  local sg, dg = u[move.prop].GUID_2_DFA374874639D7D56F0B8E8613D03461, u.DEBUG_OverrideSkillRouting.GUID_2_DFA374874639D7D56F0B8E8613D03461
-  dg.A, dg.B, dg.C, dg.D = sg.A, sg.B, sg.C, sg.D
+  P.hookRouting()
+  P.forceSkill(u, move.prop)
   U.bm().DEBUG_RandomHeroAcquireOverride = target
   E33V_TARGET_FOR[u:GetAddress()] = target
   u["ControlledByBattleAI?"] = true

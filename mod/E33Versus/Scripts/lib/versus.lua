@@ -938,6 +938,7 @@ function V.dropHandles()
   if CUSTOM then CUSTOM.dropHandles() end   -- imported textures, mesh components and HUD widgets of the old level
   if TICK then TICK.pc, TICK.w = nil, nil end
   if GP then GP.titlePC = nil end
+  if P then P.forced = nil end   -- a forced skill map of the old level (P.forceSkill)
   if SYNC then
     SYNC.lastUnit, SYNC.waiting, SYNC.held, SYNC.pendingHero, SYNC.turnSnap, SYNC.hero = nil, nil, nil, nil, nil, nil
     SYNC.queue = {}
