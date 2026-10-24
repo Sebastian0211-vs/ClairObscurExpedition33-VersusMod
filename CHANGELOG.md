@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 - 2026-10-24
+Both players should use 0.6.0 for online matches.
+- **Fix: monsters played a different attack than the one picked** (#7). The game ignored the chosen skill and each
+  monster rolled its own random one, so the two PCs saw different attacks online. The picked skill now really plays.
+  Moves a monster never declares (and Serpenphare's Absorb AP, which never ended the turn) are no longer pickable.
+- **Fix: online fights out of sync** (#7). The defender's PC now decides how many hits a move lands (projectile moves
+  could hit 12 times on one PC and 7 on the other); a hit without the defender's result falls back to it. A monster's
+  max AP no longer counts as a desync, and a unit killed at the end of a match is no longer revived to 1 HP.
 - **CharForge: MMD models** (.pmx exports, Japanese bone names). Split hips (legs under 下半身, spine under 上半身)
   are read correctly, head / wrist / fingers are matched by their MMD names, twist bones (腕捩, 手捩) no longer shift
   the arm, and the console no longer crashes on Japanese names.
